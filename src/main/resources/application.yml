@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: jinryohanjang
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/jinryohanjang}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:123}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true

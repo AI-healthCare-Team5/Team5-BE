@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: jinryohanjang-db
+    environment:
+      POSTGRES_DB: jinryohanjang
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+      TZ: Asia/Seoul
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
