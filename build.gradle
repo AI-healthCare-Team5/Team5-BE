@@ -36,4 +36,6 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// 테스트 전용 키. 실제 키는 환경 변수로만 지정한다.
+	environment 'DATA_ENCRYPTION_KEY', 'ozLEBdDMruJfsfog5h0br/nAnwp46ZSDx6JkzWI7JUA='
 }

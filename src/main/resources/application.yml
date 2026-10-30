@@ -1,6 +1,10 @@
 server:
   port: 8080
 
+app:
+  encryption:
+    key: ${DATA_ENCRYPTION_KEY:}
+
 spring:
   application:
     name: jinryohanjang
