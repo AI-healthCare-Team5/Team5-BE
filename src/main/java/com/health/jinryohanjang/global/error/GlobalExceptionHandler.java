@@ -3,6 +3,7 @@ package com.health.jinryohanjang.global.error;
 import java.util.List;
 
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -16,6 +17,7 @@ import com.health.jinryohanjang.global.common.response.ApiDomain;
 import com.health.jinryohanjang.global.common.response.ApiResponse;
 import com.health.jinryohanjang.global.common.response.Domain;
 import com.health.jinryohanjang.global.error.InvalidInputResult.FieldErrorDetail;
+import com.health.jinryohanjang.global.ratelimit.RateLimitException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,6 +31,14 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(BusinessException.class)
 	public ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessException e) {
 		return ApiResponse.of(e.getDomain(), e.getStatus(), e.getMessage(), e.getResult());
+	}
+
+	@ExceptionHandler(RateLimitException.class)
+	public ResponseEntity<ApiResponse<Object>> handleRateLimitException(RateLimitException e) {
+		ResponseEntity<ApiResponse<Object>> response = handleBusinessException(e);
+		return ResponseEntity.status(response.getStatusCode())
+			.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+			.body(response.getBody());
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)

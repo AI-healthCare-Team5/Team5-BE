@@ -1,6 +1,7 @@
 package com.health.jinryohanjang.global.error;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.health.jinryohanjang.global.common.response.ApiDomain;
 import com.health.jinryohanjang.global.common.response.ApiResponse;
 import com.health.jinryohanjang.global.common.response.Domain;
+import com.health.jinryohanjang.global.ratelimit.RateLimitException;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -72,6 +74,15 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
+	void 호출_제한은_도메인_429와_Retry_After를_반환한다() throws Exception {
+		mockMvc.perform(post("/test/rate-limited"))
+			.andExpect(status().isTooManyRequests())
+			.andExpect(header().string("Retry-After", "13"))
+			.andExpect(jsonPath("$.code").value("INTAKE_429"))
+			.andExpect(jsonPath("$.result").isEmpty());
+	}
+
+	@Test
 	void 처리하지_못한_예외는_도메인_500을_반환한다() throws Exception {
 		mockMvc.perform(post("/test/error"))
 			.andExpect(status().isInternalServerError())
@@ -100,6 +111,11 @@ class GlobalExceptionHandlerTest {
 		@PostMapping("/test/unauthorized")
 		ResponseEntity<ApiResponse<Void>> unauthorized() {
 			throw new BusinessException(Domain.AUTH, HttpStatus.UNAUTHORIZED, "로그인이 필요해요.");
+		}
+
+		@PostMapping("/test/rate-limited")
+		ResponseEntity<ApiResponse<Void>> rateLimited() {
+			throw new RateLimitException(Domain.INTAKE, 13);
 		}
 
 		@PostMapping("/test/error")
