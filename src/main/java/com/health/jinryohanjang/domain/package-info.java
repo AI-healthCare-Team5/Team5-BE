@@ -7,6 +7,7 @@
  *        ├─ service/
  *        ├─ repository/
  *        ├─ entity/      (BaseEntity 상속)
- *        └─ dto/
+ *        ├─ dto/
+ *        └─ enums/
  */
 package com.health.jinryohanjang.domain;

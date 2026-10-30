@@ -1,4 +1,4 @@
-package com.health.jinryohanjang.global.ratelimit;
+package com.health.jinryohanjang.common.util;
 
 import java.time.Duration;
 import java.util.List;
@@ -7,14 +7,15 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import com.health.jinryohanjang.global.common.response.Domain;
+import com.health.jinryohanjang.common.base.BaseStatus;
+import com.health.jinryohanjang.common.exception.GeneralException;
 
 import lombok.RequiredArgsConstructor;
 
 /**
  * Redis 고정 구간 호출 제한
- * 구간 안 호출 수가 limit을 넘으면 {도메인}_429와 남은 시간(Retry-After)을 응답한다.
- * 예: rateLimiter.check(Domain.INTAKE, "intake-start:ip:" + ip, 10, Duration.ofMinutes(1))
+ * 구간 안 호출 수가 limit을 넘으면 errorStatus와 Retry-After 헤더로 응답한다.
+ * 예: rateLimiter.check(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, "intake-start:ip:" + ip, 10, Duration.ofMinutes(1))
  */
 @Component
 @RequiredArgsConstructor
@@ -33,7 +34,7 @@ public class RateLimiter {
 
 	private final StringRedisTemplate redisTemplate;
 
-	public void check(Domain domain, String key, int limit, Duration window) {
+	public void check(BaseStatus errorStatus, String key, int limit, Duration window) {
 		List<?> result = redisTemplate.execute(INCREMENT_SCRIPT, List.of(KEY_PREFIX + key),
 			String.valueOf(window.toMillis()));
 		long count = ((Number)result.get(0)).longValue();
@@ -41,7 +42,6 @@ public class RateLimiter {
 			return;
 		}
 		long remainingMillis = ((Number)result.get(1)).longValue();
-		long retryAfterSeconds = Math.max(1, (remainingMillis + 999) / 1000);
-		throw new RateLimitException(domain, retryAfterSeconds);
+		throw GeneralException.tooManyRequests(errorStatus, Math.max(1, (remainingMillis + 999) / 1000));
 	}
 }

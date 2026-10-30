@@ -1,4 +1,4 @@
-package com.health.jinryohanjang.global.config;
+package com.health.jinryohanjang.common.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;

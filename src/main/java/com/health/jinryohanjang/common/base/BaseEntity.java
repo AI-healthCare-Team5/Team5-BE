@@ -1,4 +1,4 @@
-package com.health.jinryohanjang.global.common;
+package com.health.jinryohanjang.common.base;
 
 import java.time.LocalDateTime;
 

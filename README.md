@@ -21,18 +21,18 @@ DB·Redis 접속 정보는 `application.yml`의 기본값(docker-compose.yml과 
 ## 주요 명령
 
 - `./gradlew bootRun`: 로컬 서버 실행
-- `./gradlew test`: 테스트 (DB가 실행 중이어야 합니다. 암호화 키는 테스트 전용 키를 씁니다)
+- `./gradlew test`: 서버 기동 확인 테스트 (DB가 실행 중이어야 합니다. 암호화 키는 테스트 전용 키를 씁니다)
 - `./gradlew build`: 빌드 및 테스트
 
 ## 폴더 구성
 
-- `src/main/java/com/health/jinryohanjang/global`: 여러 도메인에서 공유하는 코드
-  - `common`: 공통 엔티티(BaseEntity, 생성/수정 시각)
-  - `common.response`: 공통 응답(ApiResponse), code 도메인(Domain), 컨트롤러 도메인 지정(@ApiDomain)
-  - `error`: 실패 예외(BusinessException)와 전역 예외 처리
-  - `crypto`: 건강정보 AES 암호화 컨버터
-  - `ratelimit`: Redis 호출 제한
+- `src/main/java/com/health/jinryohanjang/common`: 여러 도메인에서 공유하는 코드
+  - `base`: 공통 엔티티(BaseEntity), 응답 상태 인터페이스(BaseStatus)
   - `config`: 설정 클래스
+  - `exception`: 실패 예외(GeneralException)와 전역 예외 처리(GeneralExceptionAdvice)
+  - `response`: 공통 응답(ApiResponse)
+  - `status`: 응답 code 목록(ErrorStatus, SuccessStatus)
+  - `util`: 건강정보 암호화 컨버터(EncryptedStringConverter), 호출 제한(RateLimiter)
 - `src/main/java/com/health/jinryohanjang/domain`: 도메인별 코드 (API 명세 확정 후 추가)
 - `.github`: 이슈 및 PR 템플릿과 CI 워크플로
 - `docker-compose.yml`: 로컬 PostgreSQL, Redis
