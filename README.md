@@ -26,7 +26,7 @@ DB를 종료할 때는 `docker compose down`을 실행합니다. 데이터까지
 ## 폴더 구성
 
 - `src/main/java/com/health/jinryohanjang/global`: 여러 도메인에서 공유하는 코드
-  - `common`: 공통 엔티티(BaseEntity)와 상태값(Status)
+  - `common`: 공통 엔티티(BaseEntity, 생성/수정 시각)
   - `config`: 설정 클래스
 - `src/main/java/com/health/jinryohanjang/domain`: 도메인별 코드 (API 명세 확정 후 추가)
 - `.github`: 이슈 및 PR 템플릿과 CI 워크플로
