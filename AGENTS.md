@@ -14,11 +14,12 @@
 - 공통 코드는 global 아래에, 기능 코드는 domain/{도메인명} 아래에 둡니다.
 - 도메인 패키지는 controller, service, repository, entity, dto로 나눕니다.
 - 모든 엔티티는 global.common.BaseEntity를 상속합니다. BaseEntity에는 생성/수정 시각(created_at, updated_at)만 둡니다.
-- 삭제는 ERD 기준 soft delete입니다. ERD에 deleted_at이 있는 엔티티(member, guardian, medical_record)만 deleted_at을 가지고, 삭제할 때 실제로 지우지 않고 deleted_at을 기록하는 의미 있는 메서드(예: delete())로 처리합니다. 조회할 때는 deleted_at이 없는 행만 씁니다.
-- 회원 탈퇴는 member.status를 WITHDRAWN으로 바꾸고 deleted_at을 기록합니다. 같은 카카오 계정으로 다시 로그인하면 회원 행만 복구하고 기록·보호자·동의는 복구하지 않습니다.
-- 보호자는 회원당 1명입니다. 지웠다가 다시 등록하면 기존 guardian 행을 되살려 새 값으로 덮어씁니다.
-- 동의 철회는 consent.withdrawn_at을 기록합니다.
-- 문진·요약지(보관 전)는 DB가 아니라 Redis에 두고, 마지막 요청부터 1시간 TTL을 둡니다. 내 기록에 보관할 때 medical_record·record_item·record_health_info로 복사합니다.
+- 삭제는 ERD 기준 soft delete입니다. ERD에 deleted_at이 있는 엔티티(member, guardian, medical_record)만 deleted_at을 가지고, 삭제할 때 실제로 지우지 않고 deleted_at을 기록하는 의미 있는 메서드(예: delete())로 처리합니다. 조회할 때는 deleted_at이 없는 행만 씁니다. soft delete한 기록과 탈퇴 회원 데이터는 30일 뒤 매일 배치로 완전히 지웁니다.
+- 회원 탈퇴는 member.status를 WITHDRAWN으로 바꾸고 deleted_at을 기록합니다. 30일 안에 같은 카카오 계정으로 다시 로그인하면 회원 행만 복구하고 기록·보호자·동의는 복구하지 않습니다.
+- 보호자는 회원당 1명입니다(guardian.member_id UNIQUE). 등록·변경은 그 행을 upsert하고, 지워진 행이면 되살려 새 값으로 덮어씁니다.
+- 동의 철회는 consent.withdrawn_at을 기록합니다. 현재 유효한 동의는 회원·종류별로 withdrawn_at이 없는 행 하나입니다(부분 UNIQUE).
+- 건강정보 컬럼(main_symptom, onset_detail, extra_note, record_item.answer, record_health_info.info_name·detail)과 guardian.phone_number는 AES로 암호화해 저장합니다(AttributeConverter, 키는 환경 변수).
+- 문진·요약지(보관 전)는 DB가 아니라 Redis에 두고, 마지막 요청부터 1시간 TTL을 둡니다. 내 기록에 보관할 때 medical_record·record_item·record_health_info로 복사하고, medical_record.source_summary_id(UNIQUE)로 같은 요약지가 두 번 저장되지 않게 합니다.
 
 ## API 규칙
 
@@ -28,9 +29,10 @@ API 명세와 공통 규칙은 노션 "진료한장 도메인별 API 목록" 페
 - 응답은 성공·실패 모두 isSuccess, code, message, result 네 필드로 감쌉니다.
 - code는 {도메인}_{HTTP 상태} 형식입니다 (예: INTAKE_200, INTAKE_201, SUMMARY_409). 도메인은 API 명세의 도메인을 대문자로 씁니다 (AUTH, MEMBER, CONSENT, GUARDIAN, INTAKE, DEPARTMENT, HOSPITAL, SUMMARY, STT). 예외로 401은 어느 API든 AUTH_401, 보관 시 기록 저장 동의가 없으면 CONSENT_403입니다. code는 global의 enum 한 곳에서 관리합니다.
 - 실패 result는 null입니다. 예외: 400은 {errors: [{field, reason}]}, 이미 끝난 문진의 INTAKE_409는 {status}, 이미 보관한 요약지의 SUMMARY_409는 {medicalRecordId}입니다. 같은 code 안에서 이유가 갈리면 프론트는 이 result로 구분합니다.
-- 날짜·시간은 ISO 8601 + 시간대(+09:00), 시각만 쓸 때는 HH:mm입니다. 값이 없는 응답 필드는 빼지 않고 null로 내립니다.
-- 인증은 쿠키로 합니다: accessToken(JWT, 30분), refreshToken(14일, Redis 저장, 재발급 때 교체), guestKey(비로그인 문진 본인 확인). 모두 HttpOnly, Secure, SameSite=Lax입니다. 프론트가 /api를 프록시하므로 CORS 설정은 하지 않습니다.
+- 날짜·시간은 ISO 8601 + 시간대(+09:00), 시각만 쓸 때는 HH:mm입니다. JVM(-Duser.timezone)과 JPA(hibernate.jdbc.time_zone)는 Asia/Seoul로 고정합니다. 값이 없는 응답 필드는 빼지 않고 null로 내립니다.
+- 인증은 쿠키로 합니다: accessToken(JWT, 30분), refreshToken(14일, Redis 저장, 재발급 때 교체), guestKey(문진·요약지 본인 확인, 회원·비회원 모두 발급, 로그아웃 때 삭제), oauthState(카카오 로그인 state, 10분). 모두 HttpOnly, Secure, SameSite=Lax입니다. 문진·요약지의 주인은 항상 guestKey로 판정하고, accessToken은 회원 연결에만 씁니다. 프론트가 /api를 프록시하므로 CORS 설정은 하지 않습니다.
 - LLM과 STT는 백엔드에서만 호출합니다. API 키와 모델명은 환경 변수로 받습니다.
+- 호출 제한을 넘으면 {도메인}_429와 Retry-After 헤더를 줍니다 (문진 시작 IP당 분당 10개, 답변 guestKey당 분당 30회, STT IP당 분당 10회·guestKey당 시간당 60회).
 - 병원 데이터는 공공데이터를 주기적으로 동기화한 DB만 조회하고, 요청 중에 공공 API를 호출하지 않습니다.
 
 ## 코드 규칙
