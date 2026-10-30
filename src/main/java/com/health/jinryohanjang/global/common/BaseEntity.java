@@ -8,15 +8,13 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.MappedSuperclass;
 import lombok.Getter;
 
 /**
  * 모든 엔티티가 상속하는 공통 필드
  * - createdAt / updatedAt : 자동 기록
- * - status : ACTIVE / DELETED (삭제 시 실제 삭제 대신 상태만 변경)
+ * - 삭제 시각(deletedAt)은 soft delete가 필요한 엔티티(member, guardian, medical_record)에만 둔다
  */
 @Getter
 @MappedSuperclass
@@ -30,16 +28,4 @@ public abstract class BaseEntity {
 	@LastModifiedDate
 	@Column(nullable = false)
 	private LocalDateTime updatedAt;
-
-	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 20)
-	private Status status = Status.ACTIVE;
-
-	public void delete() {
-		this.status = Status.DELETED;
-	}
-
-	public boolean isActive() {
-		return this.status == Status.ACTIVE;
-	}
 }
