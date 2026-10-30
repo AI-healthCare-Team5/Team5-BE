@@ -7,11 +7,16 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import com.health.jinryohanjang.global.common.response.ApiDomain;
 import com.health.jinryohanjang.global.common.response.ApiResponse;
@@ -27,6 +32,8 @@ public class GlobalExceptionHandler {
 
 	private static final String INVALID_INPUT_MESSAGE = "입력값을 확인해 주세요.";
 	private static final String INTERNAL_ERROR_MESSAGE = "일시적인 오류가 생겼어요. 잠시 후 다시 시도해 주세요.";
+	private static final String REQUIRED_REASON = "필수 값이에요";
+	private static final String INVALID_FORMAT_REASON = "형식이 올바르지 않아요";
 
 	@ExceptionHandler(BusinessException.class)
 	public ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessException e) {
@@ -45,9 +52,38 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ApiResponse<InvalidInputResult>> handleValidationException(
 		MethodArgumentNotValidException e, HandlerMethod handlerMethod) {
 		List<FieldErrorDetail> errors = e.getBindingResult().getFieldErrors().stream()
-			.map(fieldError -> new FieldErrorDetail(fieldError.getField(), fieldError.getDefaultMessage()))
+			.map(fieldError -> new FieldErrorDetail(fieldError.getField(), reasonOf(fieldError)))
 			.toList();
 		return invalidInput(handlerMethod, errors);
+	}
+
+	@ExceptionHandler(HandlerMethodValidationException.class)
+	public ResponseEntity<ApiResponse<InvalidInputResult>> handleMethodValidationException(
+		HandlerMethodValidationException e, HandlerMethod handlerMethod) {
+		List<FieldErrorDetail> errors = e.getParameterValidationResults().stream()
+			.flatMap(result -> result.getResolvableErrors().stream()
+				.map(error -> new FieldErrorDetail(result.getMethodParameter().getParameterName(),
+					error.getDefaultMessage())))
+			.toList();
+		return invalidInput(handlerMethod, errors);
+	}
+
+	@ExceptionHandler(MissingServletRequestParameterException.class)
+	public ResponseEntity<ApiResponse<InvalidInputResult>> handleMissingParameterException(
+		MissingServletRequestParameterException e, HandlerMethod handlerMethod) {
+		return invalidInput(handlerMethod, List.of(new FieldErrorDetail(e.getParameterName(), REQUIRED_REASON)));
+	}
+
+	@ExceptionHandler(MissingServletRequestPartException.class)
+	public ResponseEntity<ApiResponse<InvalidInputResult>> handleMissingPartException(
+		MissingServletRequestPartException e, HandlerMethod handlerMethod) {
+		return invalidInput(handlerMethod, List.of(new FieldErrorDetail(e.getRequestPartName(), REQUIRED_REASON)));
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ApiResponse<InvalidInputResult>> handleTypeMismatchException(
+		MethodArgumentTypeMismatchException e, HandlerMethod handlerMethod) {
+		return invalidInput(handlerMethod, List.of(new FieldErrorDetail(e.getName(), INVALID_FORMAT_REASON)));
 	}
 
 	@ExceptionHandler(HttpMessageNotReadableException.class)
@@ -78,6 +114,13 @@ public class GlobalExceptionHandler {
 			throw new IllegalStateException("컨트롤러에 @ApiDomain이 없습니다: " + handlerMethod);
 		}
 		return ApiResponse.of(domain, HttpStatus.BAD_REQUEST, INVALID_INPUT_MESSAGE, new InvalidInputResult(errors));
+	}
+
+	private String reasonOf(FieldError fieldError) {
+		if (fieldError.isBindingFailure()) {
+			return INVALID_FORMAT_REASON;
+		}
+		return fieldError.getDefaultMessage();
 	}
 
 	private Domain findDomain(HandlerMethod handlerMethod) {

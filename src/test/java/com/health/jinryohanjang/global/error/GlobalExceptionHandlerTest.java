@@ -1,6 +1,10 @@
 package com.health.jinryohanjang.global.error;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -14,9 +18,13 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.health.jinryohanjang.global.common.response.ApiDomain;
 import com.health.jinryohanjang.global.common.response.ApiResponse;
@@ -24,6 +32,7 @@ import com.health.jinryohanjang.global.common.response.Domain;
 import com.health.jinryohanjang.global.ratelimit.RateLimitException;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 
 class GlobalExceptionHandlerTest {
@@ -70,7 +79,42 @@ class GlobalExceptionHandlerTest {
 		mockMvc.perform(post("/test/unauthorized"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("AUTH_401"))
-			.andExpect(jsonPath("$.result").isEmpty());
+			.andExpect(content().string(containsString("\"result\":null")));
+	}
+
+	@Test
+	void 쿼리_값이_없으면_도메인_400과_field를_반환한다() throws Exception {
+		mockMvc.perform(get("/test/search"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INTAKE_400"))
+			.andExpect(jsonPath("$.result.errors[0].field").value("radius"))
+			.andExpect(jsonPath("$.result.errors[0].reason").value("필수 값이에요"));
+	}
+
+	@Test
+	void 쿼리_형식이_틀리면_도메인_400과_field를_반환한다() throws Exception {
+		mockMvc.perform(get("/test/search").param("radius", "abc"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INTAKE_400"))
+			.andExpect(jsonPath("$.result.errors[0].field").value("radius"))
+			.andExpect(jsonPath("$.result.errors[0].reason").value("형식이 올바르지 않아요"));
+	}
+
+	@Test
+	void 쿼리_검증에_실패하면_도메인_400과_field를_반환한다() throws Exception {
+		mockMvc.perform(get("/test/search").param("radius", "31"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INTAKE_400"))
+			.andExpect(jsonPath("$.result.errors[0].field").value("radius"))
+			.andExpect(jsonPath("$.result.errors[0].reason").value("30km까지 검색할 수 있어요"));
+	}
+
+	@Test
+	void 파일이_없으면_도메인_400과_field를_반환한다() throws Exception {
+		mockMvc.perform(multipart("/test/upload").param("dummy", "1"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INTAKE_400"))
+			.andExpect(jsonPath("$.result.errors[0].field").value("file"));
 	}
 
 	@Test
@@ -111,6 +155,17 @@ class GlobalExceptionHandlerTest {
 		@PostMapping("/test/unauthorized")
 		ResponseEntity<ApiResponse<Void>> unauthorized() {
 			throw new BusinessException(Domain.AUTH, HttpStatus.UNAUTHORIZED, "로그인이 필요해요.");
+		}
+
+		@GetMapping("/test/search")
+		ResponseEntity<ApiResponse<Integer>> search(
+			@RequestParam @Max(value = 30, message = "30km까지 검색할 수 있어요") Integer radius) {
+			return ApiResponse.ok(Domain.INTAKE, "검색 성공", radius);
+		}
+
+		@PostMapping("/test/upload")
+		ResponseEntity<ApiResponse<Void>> upload(@RequestPart MultipartFile file) {
+			return ApiResponse.ok(Domain.INTAKE, "업로드 성공", null);
 		}
 
 		@PostMapping("/test/rate-limited")
