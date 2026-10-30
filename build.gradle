@@ -33,6 +33,11 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
+tasks.named('bootRun') {
+	jvmArgs '-Duser.timezone=Asia/Seoul'
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
+	jvmArgs '-Duser.timezone=Asia/Seoul'
 }
