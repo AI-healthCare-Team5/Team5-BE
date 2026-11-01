@@ -4,7 +4,7 @@ Spring Boot, JPA, PostgreSQL을 사용하는 백엔드 프로젝트입니다.
 
 ## 개발 환경
 
-- JDK 17
+- JDK 21
 - Docker Desktop (로컬 PostgreSQL, Redis 실행용)
 
 ## 시작하기

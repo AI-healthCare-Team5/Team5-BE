@@ -4,7 +4,7 @@
 
 ## 기술 기준
 
-- Java 17, Spring Boot 4, Gradle을 사용합니다.
+- Java 21, Spring Boot 4, Gradle을 사용합니다.
 - 데이터 접근은 Spring Data JPA, DB는 PostgreSQL입니다.
 - 로컬 DB는 docker-compose.yml로 실행합니다.
 - API 명세와 ERD에 없는 API, 엔티티, 컬럼은 임의로 만들지 않습니다.
