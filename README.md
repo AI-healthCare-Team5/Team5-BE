@@ -14,9 +14,20 @@ Spring Boot, JPA, PostgreSQL을 사용하는 백엔드 프로젝트입니다.
 3. 서버를 실행합니다: `./gradlew bootRun` (Windows: `gradlew.bat bootRun`)
 4. `http://localhost:8080`에서 서버가 실행됩니다.
 
-DB·Redis 접속 정보는 `application.yml`의 기본값(docker-compose.yml과 동일)을 사용합니다. 다른 값과 외부 서비스 키는 `.env.example`을 참고해 환경 변수로 지정합니다.
+DB 접속 정보는 `application-local.yml`, Redis 접속 정보는 `application.yml`의 기본값(docker-compose.yml과 동일)을 사용합니다. 다른 값과 외부 서비스 키는 `.env.example`을 참고해 환경 변수로 지정합니다.
 
 종료할 때는 `docker compose down`을 실행합니다. 데이터까지 지우려면 `docker compose down -v`를 실행합니다.
+
+## 프로필
+
+프로필을 지정하지 않으면 `local`로 실행됩니다. 다른 프로필은 `SPRING_PROFILES_ACTIVE` 환경 변수로 지정합니다.
+
+| 프로필 | 설정 파일 | 용도 | DB 접속 정보 | `show-sql` |
+| --- | --- | --- | --- | --- |
+| `local` | `application-local.yml` | 로컬 개발, 테스트 | 기본값 있음 | `true` |
+| `dev` | `application-dev.yml` | 개발 서버 | 환경 변수 필수 | `false` |
+
+공통 설정은 `application.yml`에 있습니다. `dev` 프로필은 DB 접속 환경 변수가 없으면 서버가 시작하지 않습니다. `REDIS_HOST`가 없으면 서버는 시작되지만 Redis를 처음 호출할 때 실패하므로 반드시 지정합니다.
 
 ## 주요 명령
 

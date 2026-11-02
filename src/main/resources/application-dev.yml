@@ -19,7 +19,6 @@ spring:
       port: ${REDIS_PORT:6379}
 
   jpa:
-    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false
