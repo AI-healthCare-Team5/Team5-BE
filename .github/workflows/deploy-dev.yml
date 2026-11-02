@@ -1,0 +1,111 @@
+# =====================================================================
+# [비활성화 상태] AWS 인프라(S3, IAM Role, EC2) 준비 전이라 자동 배포를 꺼 두었습니다.
+# 활성화 방법: 아래 on: 의 push 트리거 주석(#)을 해제합니다.
+# 수동 실행(workflow_dispatch)은 이 파일이 기본 브랜치(main)에 들어간 뒤 Actions 탭에 나타납니다.
+# =====================================================================
+name: Deploy DEV
+
+on:
+  # push:
+  #   branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # GitHub OIDC로 AWS Role 사용
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  IMAGE_NAME: team5-be
+  CONTAINER_NAME: team5-be-dev
+  S3_PREFIX: dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build Docker image
+        run: |
+          docker build -t "$IMAGE_NAME:${{ github.sha }}" .
+          docker save "$IMAGE_NAME:${{ github.sha }}" | gzip > image.tar.gz
+
+      - name: Upload image to S3
+        run: |
+          aws s3 cp image.tar.gz \
+            "s3://${{ secrets.DEPLOY_S3_BUCKET }}/$S3_PREFIX/$IMAGE_NAME-${{ github.sha }}.tar.gz"
+
+      - name: Run container on EC2
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          S3_OBJECT: s3://${{ secrets.DEPLOY_S3_BUCKET }}/${{ env.S3_PREFIX }}/${{ env.IMAGE_NAME }}-${{ github.sha }}.tar.gz
+        with:
+          host: ${{ secrets.DEV_EC2_HOST }}
+          username: ${{ secrets.DEV_EC2_USERNAME }}
+          key: ${{ secrets.DEV_EC2_SSH_KEY }}
+          envs: AWS_REGION,IMAGE,IMAGE_NAME,CONTAINER_NAME,S3_OBJECT
+          script: |
+            set -e
+            cd ~/team5
+
+            # EC2 IAM Role로 S3에서 이미지 다운로드 (액세스 키 불필요)
+            aws s3 cp "$S3_OBJECT" image.tar.gz --region "$AWS_REGION"
+            gunzip -c image.tar.gz | docker load
+            rm -f image.tar.gz
+
+            # 이전 컨테이너는 새 컨테이너가 정상 기동할 때까지 보관
+            PREVIOUS_NAME="$CONTAINER_NAME-previous"
+            docker rm -f "$PREVIOUS_NAME" 2>/dev/null || true
+            if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+              docker stop "$CONTAINER_NAME"
+              docker rename "$CONTAINER_NAME" "$PREVIOUS_NAME"
+            fi
+
+            # 기동 로그를 최대 2분 기다리고, 실패하면 이전 컨테이너로 되돌림
+            STARTED=false
+            if docker run -d \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              -p 8080:8080 \
+              --env-file ~/team5/.env.dev \
+              -e SPRING_PROFILES_ACTIVE=dev \
+              "$IMAGE"; then
+              for _ in $(seq 1 24); do
+                if docker logs "$CONTAINER_NAME" 2>&1 | grep -q "Started JinryohanjangApplication"; then
+                  STARTED=true
+                  break
+                fi
+                sleep 5
+              done
+            fi
+
+            if [ "$STARTED" != "true" ]; then
+              echo "새 컨테이너가 기동하지 못했습니다. 이전 컨테이너로 되돌립니다."
+              docker logs --tail 50 "$CONTAINER_NAME" 2>&1 || true
+              docker rm -f "$CONTAINER_NAME" || true
+              if docker inspect "$PREVIOUS_NAME" >/dev/null 2>&1; then
+                docker rename "$PREVIOUS_NAME" "$CONTAINER_NAME"
+                docker start "$CONTAINER_NAME"
+              fi
+              exit 1
+            fi
+
+            docker rm "$PREVIOUS_NAME" 2>/dev/null || true
+
+            # EC2에는 최근 이미지 3개만 남김 (이전 버전은 S3에 보관)
+            docker images "$IMAGE_NAME" --format '{{.Repository}}:{{.Tag}}' \
+              | tail -n +4 \
+              | xargs -r docker rmi || true
