@@ -17,6 +17,9 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
+      # 미지정 시 Redis 장애 때 요청이 최대 60초 대기함
+      timeout: 2s
+      connect-timeout: 2s
 
   jpa:
     hibernate:

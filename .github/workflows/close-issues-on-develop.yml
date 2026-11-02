@@ -20,25 +20,44 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request;
-            const body = pr.body || '';
-            const regex = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
+            // HTML 주석과 코드 안의 키워드는 무시
+            const body = (pr.body || '')
+              .replace(/<!--[\s\S]*?-->/g, '')
+              .replace(/```[\s\S]*?```/g, '')
+              .replace(/`[^`\n]*`/g, '');
+            // hotfix, unresolved 같은 단어 일부는 무시
+            const regex = /(?<![\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)/gi;
             const issueNumbers = new Set([...body.matchAll(regex)].map(m => Number(m[1])));
 
+            // 이슈 하나가 실패해도 나머지 이슈와 브랜치 삭제는 계속 진행
             for (const issueNumber of issueNumbers) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                body: `#${pr.number} PR이 develop에 머지되어 이슈를 닫습니다.`,
-              });
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                state: 'closed',
-                state_reason: 'completed',
-              });
-              core.info(`Closed issue #${issueNumber}`);
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                });
+                if (issue.pull_request || issue.state === 'closed') {
+                  core.info(`Skip #${issueNumber}: PR or already closed`);
+                  continue;
+                }
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: `#${pr.number} PR이 develop에 머지되어 이슈를 닫습니다.`,
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  state: 'closed',
+                  state_reason: 'completed',
+                });
+                core.info(`Closed issue #${issueNumber}`);
+              } catch (error) {
+                core.warning(`Failed to close #${issueNumber}: ${error.message}`);
+              }
             }
 
       - name: Delete merged branch
@@ -58,6 +77,26 @@ jobs:
               return;
             }
 
+            // 이 브랜치를 쓰는 다른 열린 PR이 있으면 삭제하지 않음 (hotfix의 main PR 등)
+            const openFromBranch = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${branch}`,
+              per_page: 100,
+            });
+            const openToBranch = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base: branch,
+              per_page: 100,
+            });
+            if (openFromBranch.length > 0 || openToBranch.length > 0) {
+              core.info(`Branch '${branch}' is used by an open PR: skip deletion`);
+              return;
+            }
+
             try {
               await github.rest.git.deleteRef({
                 owner: context.repo.owner,
@@ -66,8 +105,10 @@ jobs:
               });
               core.info(`Deleted branch '${branch}'`);
             } catch (error) {
-              if (error.status === 422 || error.status === 404) {
+              if (error.status === 404 || /does not exist/i.test(error.message)) {
                 core.info(`Branch '${branch}' already deleted`);
+              } else if (error.status === 422) {
+                core.warning(`Branch '${branch}' was not deleted: ${error.message}`);
               } else {
                 throw error;
               }

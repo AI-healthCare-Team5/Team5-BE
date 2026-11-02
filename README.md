@@ -37,15 +37,15 @@ DB 접속 정보는 `application-local.yml`, Redis 접속 정보는 `application
 
 ## 폴더 구성
 
-- `src/main/java/com/health/jinryohanjang/global`: 여러 도메인에서 공유하는 코드
-  - `common`: 공통 엔티티(BaseEntity, 생성/수정 시각)
-  - `common.response`: 공통 응답(ApiResponse), code 도메인(Domain), 컨트롤러 도메인 지정(@ApiDomain)
-  - `error`: 실패 예외(BusinessException)와 전역 예외 처리
-  - `crypto`: 건강정보 AES 암호화 컨버터
-  - `ratelimit`: Redis 호출 제한
+- `src/main/java/com/health/jinryohanjang/common`: 여러 도메인에서 공유하는 코드
+  - `base`: 공통 엔티티(BaseEntity, 생성/수정 시각), 응답 상태 인터페이스(BaseStatus)
   - `config`: 설정 클래스
+  - `exception`: 실패 예외(GeneralException)와 전역 예외 처리
+  - `response`: 공통 응답(ApiResponse)
+  - `status`: 응답 코드(ErrorStatus, SuccessStatus)
+  - `util`: 건강정보 AES 암호화 컨버터, Redis 호출 제한
 - `src/main/java/com/health/jinryohanjang/domain`: 도메인별 코드 (API 명세 확정 후 추가)
-- `.github`: 이슈 및 PR 템플릿과 CI 워크플로
+- `.github`: 이슈 및 PR 템플릿과 CI, 이슈 정리, 배포 워크플로
 - `docker-compose.yml`: 로컬 PostgreSQL, Redis
 - `Dockerfile`: 서버 배포용 이미지
 
@@ -55,18 +55,21 @@ DB 접속 정보는 `application-local.yml`, Redis 접속 정보는 `application
 
 GitHub Actions는 main 브랜치 push와 PR에서 PostgreSQL을 띄운 뒤 `./gradlew build`(컴파일과 테스트)를 실행합니다.
 
+- `close-issues-on-develop.yml`: develop에 PR이 머지되면 본문의 `Closes #번호`로 이슈를 닫고 브랜치를 삭제합니다. 그 브랜치를 쓰는 다른 열린 PR이 있으면 삭제하지 않습니다.
+- `deploy-dev.yml`: 개발 서버 배포 워크플로입니다. AWS 준비 전이라 자동 실행은 꺼 두었고, 새 컨테이너가 기동하지 못하면 이전 컨테이너로 되돌리고 실패로 끝납니다. GitHub Secrets에 `AWS_DEPLOY_ROLE_ARN`, `DEPLOY_S3_BUCKET`, `DEV_EC2_HOST`, `DEV_EC2_USERNAME`, `DEV_EC2_SSH_KEY`가 필요하고, EC2에 `~/team5/.env.dev`가 있어야 합니다.
+
 # Git 협업 규칙
 
 ## 1. 커밋 유형 (Commit Type)
 
 커밋은 다음과 같이 분류하여 메시지를 작성한다.
 
-- **`feat`** : 기능 개발
-- **`fix`** : 버그 수정
-- **`style`** : UI 스타일 수정 (CSS, Tailwind class, 디자인 토큰 값 변경 등 **기능 변경 없음**)
-- **`docs`** : 문서 작업 (주로 `main` 에서 `README.md` 작성)
-- **`refactor`** : 리팩토링 (기능 변경 없이 **구조/설계 개선**, 함수 추출, 클래스 구조 변경 등)
-- **`chore`** : 설정 변경, 파일 이동/이름 변경, 주석 추가 등 빌드/기능에 영향 없는 작업
+- **`FEAT`** : 기능 개발
+- **`FIX`** : 버그 수정
+- **`STYLE`** : 코드 포맷 수정 (들여쓰기, 줄바꿈 등 **기능 변경 없음**)
+- **`DOCS`** : 문서 작업 (`README.md` 등)
+- **`REFACTOR`** : 리팩토링 (기능 변경 없이 **구조/설계 개선**, 함수 추출, 클래스 구조 변경 등)
+- **`CHORE`** : 빌드 설정 변경, 파일 이동/이름 변경, 주석 추가 등 기능에 영향 없는 작업
 
 ---
 
@@ -76,7 +79,7 @@ GitHub Actions는 main 브랜치 push와 PR에서 PostgreSQL을 띄운 뒤 `./gr
 
 ### 📌 규칙
 
-- 커밋 유형은 **반드시 영문 소문자**로 작성한다.
+- 커밋 유형은 **반드시 영문 대문자**로 작성한다.
 - 커밋 메시지는 **기본적으로 한글**로 작성하되, 라이브러리명/기술 용어/에러 메시지는 **영어 사용을 허용**한다.
 - 필요 시 커밋 메시지 가장 앞에 **이슈 번호**를 추가한다.
 - 커밋은 **“논리적으로 독립적인 작업”** 단위로 작성한다.
@@ -96,42 +99,43 @@ GitHub Actions는 main 브랜치 push와 PR에서 PostgreSQL을 띄운 뒤 `./gr
 
 ### `main` : 배포용 브랜치
 - 실제 서비스에 배포되는 코드만 포함
-- 직접 개발하지 않고 `dev` 또는 `fix` 등의 브랜치를 이용하여 병합하여 사용
+- 직접 개발하지 않고 `develop` 또는 `fix` 등의 브랜치를 이용하여 병합하여 사용
 
 ### `develop` : 개발 통합 브랜치
 - `main` 브랜치에서 분기
 - 여러 기능이 개발되고 통합되는 브랜치
-- `feature` 브랜치에서 작업한 기능들을 이 곳으로 병합
+- `feat` 브랜치에서 작업한 기능들을 이 곳으로 병합
 - 충분히 테스트한 후 `main`으로 배포
 
-### `feat/#이슈번호-아이디` : 신규 기능 개발 브랜치
-- `dev` 브랜치에서 분기되어 기능 단위로 개발
-- 개발 완료 후 `dev`로 병합
+### `feat/이슈번호-아이디` : 신규 기능 개발 브랜치
+- `develop` 브랜치에서 분기되어 기능 단위로 개발
+- 개발 완료 후 `develop`로 병합
 - 브랜치명은 `kebab-case` 사용
 
-### `fix/#이슈번호-아이디` : 버그 수정용 브랜치
-- `dev` 또는 `main`에서 분기하여 버그 수정
-- **dev에서 분기** : 개발 중 발견된 버그 수정
-  - 기능 구현에 대한 버그 수정 시, 반드시 해당 기능 브랜치가 `dev`와 병합되어 있는지 확인 후 수정 진행
-  - 수정 완료 후 `dev`로 병합
+### `fix/이슈번호-아이디` : 버그 수정용 브랜치
+- `develop` 또는 `main`에서 분기하여 버그 수정
+- **develop에서 분기** : 개발 중 발견된 버그 수정
+  - 기능 구현에 대한 버그 수정 시, 반드시 해당 기능 브랜치가 `develop`와 병합되어 있는지 확인 후 수정 진행
+  - 수정 완료 후 `develop`로 병합
 
-### `hotfix/#이슈번호-아이디` : 긴급 수정 브랜치
+### `hotfix/이슈번호-아이디` : 긴급 수정 브랜치
 - 운영 환경(`main`)에서 발생한 긴급 버그 수정
-- `main`에서 분기하여 수정 후 `main`과 `dev`에 모두 병합
+- `main`에서 분기하여 수정 후 `main`과 `develop`에 모두 병합
 
 ---
 
 ## 4. 브랜치 규칙 (Branching Rule)
 
-1. 기능 개발은 반드시 `feature` 브랜치에서 개발한다.
-2. 개발 완료 시 `dev` 브랜치로 합병한다.
+1. 기능 개발은 반드시 `feat` 브랜치에서 개발한다.
+2. 개발 완료 시 `develop` 브랜치로 합병한다.
 3. 브랜치명은 `kebab-case`를 사용한다.
 4. 모든 QA 및 버그 수정 완료 시 `main`으로 병합한다.
-5. 긴급 수정은 `hotfix` 브랜치에서 진행 후 `main`과 `dev`에 병합한다.
+5. 긴급 수정은 `hotfix` 브랜치에서 진행 후 `main`과 `develop`에 병합한다.
 
 
 > **`타입/이슈번호-깃허브아이디`**
 
-- **기능 개발**: `feat/12-greaming`
-- **버그 수정**: `fix/15-greaming`
-- **문서 작업**: `docs/20-greaming`
+- **기능 개발**: `feat/12-mybookg`
+- **버그 수정**: `fix/15-mybookg`
+- **문서 작업**: `docs/20-mybookg`
+- **설정 작업**: `chore/4-mybookg`

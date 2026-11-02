@@ -1,7 +1,7 @@
 # =====================================================================
 # [비활성화 상태] AWS 인프라(S3, IAM Role, EC2) 준비 전이라 자동 배포를 꺼 두었습니다.
 # 활성화 방법: 아래 on: 의 push 트리거 주석(#)을 해제합니다.
-# 현재는 Actions 탭에서 수동 실행(workflow_dispatch)만 가능합니다.
+# 수동 실행(workflow_dispatch)은 이 파일이 기본 브랜치(main)에 들어간 뒤 Actions 탭에 나타납니다.
 # =====================================================================
 name: Deploy DEV
 
@@ -66,15 +66,44 @@ jobs:
             gunzip -c image.tar.gz | docker load
             rm -f image.tar.gz
 
-            docker stop "$CONTAINER_NAME" || true
-            docker rm "$CONTAINER_NAME" || true
-            docker run -d \
+            # 이전 컨테이너는 새 컨테이너가 정상 기동할 때까지 보관
+            PREVIOUS_NAME="$CONTAINER_NAME-previous"
+            docker rm -f "$PREVIOUS_NAME" 2>/dev/null || true
+            if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+              docker stop "$CONTAINER_NAME"
+              docker rename "$CONTAINER_NAME" "$PREVIOUS_NAME"
+            fi
+
+            # 기동 로그를 최대 2분 기다리고, 실패하면 이전 컨테이너로 되돌림
+            STARTED=false
+            if docker run -d \
               --name "$CONTAINER_NAME" \
               --restart unless-stopped \
               -p 8080:8080 \
               --env-file ~/team5/.env.dev \
               -e SPRING_PROFILES_ACTIVE=dev \
-              "$IMAGE"
+              "$IMAGE"; then
+              for _ in $(seq 1 24); do
+                if docker logs "$CONTAINER_NAME" 2>&1 | grep -q "Started JinryohanjangApplication"; then
+                  STARTED=true
+                  break
+                fi
+                sleep 5
+              done
+            fi
+
+            if [ "$STARTED" != "true" ]; then
+              echo "새 컨테이너가 기동하지 못했습니다. 이전 컨테이너로 되돌립니다."
+              docker logs --tail 50 "$CONTAINER_NAME" 2>&1 || true
+              docker rm -f "$CONTAINER_NAME" || true
+              if docker inspect "$PREVIOUS_NAME" >/dev/null 2>&1; then
+                docker rename "$PREVIOUS_NAME" "$CONTAINER_NAME"
+                docker start "$CONTAINER_NAME"
+              fi
+              exit 1
+            fi
+
+            docker rm "$PREVIOUS_NAME" 2>/dev/null || true
 
             # EC2에는 최근 이미지 3개만 남김 (이전 버전은 S3에 보관)
             docker images "$IMAGE_NAME" --format '{{.Repository}}:{{.Tag}}' \
