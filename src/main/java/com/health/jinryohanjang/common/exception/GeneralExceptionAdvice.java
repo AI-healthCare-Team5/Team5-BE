@@ -15,13 +15,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.FieldError;
-import org.springframework.validation.ObjectError;
 import org.springframework.validation.method.ParameterErrors;
 import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestCookieException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -53,6 +53,7 @@ import tools.jackson.core.JacksonException;
 public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 
 	private static final Pattern DOMAIN_PACKAGE = Pattern.compile("\\.domain\\.([a-z]+)\\.");
+	private static final String GUEST_KEY = "guestKey";
 	private static final String REQUIRED = "필수 값이에요";
 	private static final String INVALID_FORMAT = "형식이 올바르지 않아요";
 
@@ -101,6 +102,18 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 	}
 
 	/**
+	 * guestKey가 없으면 문진·요약지의 주인을 판정할 수 없으므로 명세대로 {도메인}_403으로 응답한다.
+	 */
+	@Override
+	protected ResponseEntity<Object> handleServletRequestBindingException(
+		ServletRequestBindingException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		if (ex instanceof MissingRequestCookieException e && GUEST_KEY.equals(e.getCookieName())) {
+			return handleExceptionInternal(ex, null, headers, HttpStatus.FORBIDDEN, request);
+		}
+		return super.handleServletRequestBindingException(ex, headers, status, request);
+	}
+
+	/**
 	 * 크기 초과는 컨트롤러를 찾기 전에 발생해 도메인을 읽을 수 없다. 업로드 API는 STT뿐이므로 STT_413으로 응답한다.
 	 */
 	@Override
@@ -132,7 +145,7 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 
 	private List<FieldErrorDetail> fieldErrorsOf(Exception ex) {
 		if (ex instanceof MethodArgumentNotValidException e) {
-			return e.getBindingResult().getAllErrors().stream()
+			return e.getBindingResult().getFieldErrors().stream()
 				.map(error -> toDetail(error, ""))
 				.toList();
 		}
@@ -157,7 +170,8 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 			return List.of(new FieldErrorDetail(e.getPropertyName(), INVALID_FORMAT));
 		}
 		if (ex instanceof HttpMessageNotReadableException e) {
-			return List.of(new FieldErrorDetail(bodyFieldOf(e), INVALID_FORMAT));
+			String field = bodyFieldOf(e);
+			return field == null ? List.of() : List.of(new FieldErrorDetail(field, INVALID_FORMAT));
 		}
 		if (ex instanceof MultipartException) {
 			return List.of(new FieldErrorDetail("file", INVALID_FORMAT));
@@ -168,7 +182,7 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 	private List<FieldErrorDetail> detailsOf(ParameterValidationResult result) {
 		if (result instanceof ParameterErrors errors) {
 			String prefix = errors.getContainerIndex() == null ? "" : "[" + errors.getContainerIndex() + "].";
-			return errors.getAllErrors().stream()
+			return errors.getFieldErrors().stream()
 				.map(error -> toDetail(error, prefix))
 				.toList();
 		}
@@ -178,12 +192,13 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 			.toList();
 	}
 
-	private FieldErrorDetail toDetail(ObjectError error, String prefix) {
-		if (error instanceof FieldError fieldError) {
-			return new FieldErrorDetail(prefix + fieldError.getField(),
-				fieldError.isBindingFailure() ? INVALID_FORMAT : fieldError.getDefaultMessage());
-		}
-		return new FieldErrorDetail(prefix + error.getObjectName(), error.getDefaultMessage());
+	/**
+	 * field는 요청 필드 이름이어야 하므로 필드에 묶이지 않은 클래스 수준 오류는 담지 않는다.
+	 * 클래스 수준 제약은 검증기에서 addPropertyNode로 필드를 지정한다.
+	 */
+	private FieldErrorDetail toDetail(FieldError error, String prefix) {
+		return new FieldErrorDetail(prefix + error.getField(),
+			error.isBindingFailure() ? INVALID_FORMAT : error.getDefaultMessage());
 	}
 
 	/**
@@ -206,7 +221,7 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 	}
 
 	/**
-	 * 값의 형식이 틀리면 해당 필드를, 본문 자체가 없거나 깨졌으면 body를 돌려준다.
+	 * 값의 형식이 틀리면 해당 필드를 돌려준다. 본문이 없거나 깨져 필드를 알 수 없으면 null이다.
 	 */
 	private String bodyFieldOf(HttpMessageNotReadableException ex) {
 		if (ex.getCause() instanceof JacksonException cause) {
@@ -222,6 +237,6 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 				return field.toString();
 			}
 		}
-		return "body";
+		return null;
 	}
 }

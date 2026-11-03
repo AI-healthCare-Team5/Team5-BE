@@ -58,8 +58,10 @@ throw GeneralException.tooManyRequests(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, sec
 아직 고쳐지지 않은 공통 코드 문제입니다. 고치려면 먼저 사용자에게 알립니다.
 
 - **도메인 판별:** `\.domain\.([a-z]+)\.` 패키지에서 읽습니다. `domain.medicalRecord`는 `COMMON_400`이 되고, `domain.medicalrecord`는 `MEDICALRECORD_400`이 됩니다. 도메인 패키지는 `AGENTS.md`의 도메인 이름을 소문자로 씁니다.
-- **STT 업로드:** 크기 초과는 컨트롤러와 상관없이 `STT_413`입니다. 업로드 API를 추가하면 처리를 다시 봐야 합니다. `spring.servlet.multipart` 제한은 설정돼 있지 않아 Boot 기본값(파일 1MB)이 적용됩니다.
+- **STT 업로드:** 크기 초과는 컨트롤러와 상관없이 `STT_413`입니다. 업로드 API를 추가하면 처리를 다시 봐야 합니다. 제한은 `application.yml`의 `spring.servlet.multipart` 10MB이고, 60초 제한은 코드로 확인해야 합니다. 20MB를 넘는 요청은 Tomcat(`max-swallow-size`)이 연결을 끊어 `STT_413`을 받지 못합니다.
 - **boundary 없는 multipart:** 컨트롤러를 찾기 전에 실패해 `COMMON_400`이 됩니다.
+- **`guestKey` 누락:** `@CookieValue`로 받다가 쿠키가 없으면 Advice가 `{도메인}_403`으로 응답합니다(노션 명세). 문진·요약지 API에서 쓰고, 처음 발급하는 API(문진 시작, STT)에서는 `required = false`로 받습니다.
+- **`errors`가 빌 때:** 깨진 JSON처럼 필드를 알 수 없으면 `errors`는 `[]`입니다(노션 명세). 클래스 수준 제약은 필드에 묶이지 않으면 `errors`에 담기지 않으니, 검증기에서 `addPropertyNode("location")`처럼 필드를 지정합니다.
 - **필터:** 필터에서 던진 예외는 Advice를 거치지 않습니다. JWT 인증을 필터로 만들면 `AUTH_401` 응답을 직접 처리해야 합니다.
 - **날짜:** `BaseEntity`는 `LocalDateTime`입니다. 응답 DTO에 그대로 넣으면 `+09:00`이 빠지니 `OffsetDateTime`으로 변환합니다. 시각만 쓸 때는 `HH:mm`으로 맞춥니다.
 
