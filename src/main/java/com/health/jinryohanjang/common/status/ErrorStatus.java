@@ -15,6 +15,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum ErrorStatus implements BaseStatus {
 
+	// common
+	NOT_IMPLEMENTED("COMMON_501", HttpStatus.NOT_IMPLEMENTED, "아직 준비 중인 API예요."),
+
 	// auth
 	LOGIN_REQUIRED("AUTH_401", HttpStatus.UNAUTHORIZED, "로그인이 필요해요."),
 	TOKEN_EXPIRED("AUTH_401", HttpStatus.UNAUTHORIZED, "로그인이 만료됐어요."),

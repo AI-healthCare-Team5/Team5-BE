@@ -23,3 +23,11 @@ spring:
       hibernate:
         jdbc:
           time_zone: Asia/Seoul
+
+springdoc:
+  # 전역 예외 처리기의 응답이 모든 API에 붙지 않게 함 (API별 응답은 설명에 적음)
+  override-with-generic-response: false
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
