@@ -49,6 +49,15 @@ public class HospitalSchedule extends BaseEntity {
 	@Column(nullable = false)
 	private LocalTime closeTime;
 
+	public static HospitalSchedule create(Hospital hospital, int dayOfWeek, LocalTime openTime, LocalTime closeTime) {
+		HospitalSchedule schedule = new HospitalSchedule();
+		schedule.hospital = hospital;
+		schedule.dayOfWeek = dayOfWeek;
+		schedule.openTime = openTime;
+		schedule.closeTime = closeTime;
+		return schedule;
+	}
+
 	public boolean is24Hours() {
 		return LocalTime.MIDNIGHT.equals(openTime) && LocalTime.of(23, 59).equals(closeTime);
 	}
