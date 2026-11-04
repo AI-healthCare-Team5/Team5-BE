@@ -73,7 +73,7 @@ ON CONFLICT (department_code) DO NOTHING;
 --   12. 많은 양의 흑색변·혈변: Pre-KTAS 혈변/흑색변: 많은 양 2등급
 -- 강원 사투리·노인 구어 표현(가심, 아퍼, 숨이 맥혀, 까무러쳤어, 골이 깨질 것 같아, 왼짝 팔 등)도 함께 넣는다.
 -- 어간이 바뀌는 활용형(넘어가→넘어갈, 파랗→파래, 심하→심해, 과거형)은 따로 넣는다. "대답이 없어요"처럼 없다는 말이 증상이면 키워드에 '없'까지 넣어야 부정으로 처리되지 않는다.
--- 판정 결과는 src/test/resources/red-flag-cases.csv의 문장으로 빌드할 때마다 확인한다.
+-- 규칙을 고치면 docs/red-flag/cases.csv의 문장이 모두 기대대로 판정되는지 확인한다.
 -- 서버가 시작할 때마다 이 내용으로 덮어쓴다. 여기서 지운 키워드·규칙은 DB에서도 지운다.
 INSERT INTO red_flag_rule (red_flag_rule_id, rule_name, category, priority, is_active, created_at, updated_at) VALUES
 	(1, '흉통', 'CHEST_PAIN', 1, TRUE, now(), now()),

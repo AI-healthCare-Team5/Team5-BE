@@ -56,7 +56,7 @@
 
 ## 입력과 판정 결과
 
-전체 테스트 문장은 [`src/test/resources/red-flag-cases.csv`](../../src/test/resources/red-flag-cases.csv)에 있어요 (94개, 문장·기대 결과·이유). `RedFlagDetectorCasesTest`가 `./gradlew build`와 CI에서 매번 이 목록으로 판정해서, 규칙을 고치다 기존 판정이 깨지면 빌드가 실패해요. 아래는 그중 일부예요.
+전체 판정 기준 문장은 [`cases.csv`](cases.csv)에 있어요 (94개, 문장·기대 결과·이유). 2026-11-04 규칙으로 94개 모두 기대대로 판정되는 것을 확인했어요. 아래는 그중 일부예요.
 
 | 입력 | 판정 | 이유 |
 | --- | --- | --- |
@@ -92,5 +92,5 @@
 
 1. 근거가 되는 등급(고시 별표의 판단기준과 코드)을 먼저 찾아요. `sources/prektas-adult-excerpt.md`에 관련 증상이 모여 있어요.
 2. `data.sql`의 규칙 주석과 이 문서의 "규칙과 근거" 표를 같이 고쳐요.
-3. `src/test/resources/red-flag-cases.csv`에 응급이어야 하는 말과 아니어야 하는 말을 함께 추가하고 `./gradlew test --tests '*RedFlagDetectorCasesTest'`로 확인해요.
+3. `cases.csv`에 응급이어야 하는 말과 아니어야 하는 말을 함께 추가하고, 로컬 서버에서 목록의 문장으로 판정해 기존 문장까지 모두 기대대로 나오는지 확인해요.
 4. 키워드는 띄어쓰기 없이, 활용형(과거형·어간 변화)까지 넣어요. 새 키워드가 다른 증상 문장에서 잘못 걸리지 않는지 "응급 아님" 문장도 같이 넣어요.
