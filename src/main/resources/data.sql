@@ -71,6 +71,9 @@ ON CONFLICT (department_code) DO NOTHING;
 --   10. 뇌졸중 의심 (갑작스러운 시력 변화): Pre-KTAS 시력장애 급성·갑작스러운 변화 2등급, 질병관리청 뇌졸중 조기 증상(시각 장애)
 --   11. 뇌졸중 의심 (가장 심한 두통): Pre-KTAS 두통: 지금까지 경험한 두통 중 가장 심함 2등급, 질병관리청 뇌졸중 조기 증상(극심한 두통)
 --   12. 많은 양의 흑색변·혈변: Pre-KTAS 혈변/흑색변: 많은 양 2등급
+-- 강원 사투리·노인 구어 표현(가심, 아퍼, 숨이 맥혀, 까무러쳤어, 골이 깨질 것 같아, 왼짝 팔 등)도 함께 넣는다.
+-- 어간이 바뀌는 활용형(넘어가→넘어갈, 파랗→파래, 심하→심해, 과거형)은 따로 넣는다. "대답이 없어요"처럼 없다는 말이 증상이면 키워드에 '없'까지 넣어야 부정으로 처리되지 않는다.
+-- 판정 결과는 src/test/resources/red-flag-cases.csv의 문장으로 빌드할 때마다 확인한다.
 -- 서버가 시작할 때마다 이 내용으로 덮어쓴다. 여기서 지운 키워드·규칙은 DB에서도 지운다.
 INSERT INTO red_flag_rule (red_flag_rule_id, rule_name, category, priority, is_active, created_at, updated_at) VALUES
 	(1, '흉통', 'CHEST_PAIN', 1, TRUE, now(), now()),
@@ -88,7 +91,7 @@ INSERT INTO red_flag_rule (red_flag_rule_id, rule_name, category, priority, is_a
 ON CONFLICT (red_flag_rule_id) DO UPDATE SET rule_name = EXCLUDED.rule_name, category = EXCLUDED.category,
 	priority = EXCLUDED.priority, is_active = EXCLUDED.is_active, updated_at = now();
 
-DELETE FROM red_flag_keyword WHERE red_flag_keyword_id > 213;
+DELETE FROM red_flag_keyword WHERE red_flag_keyword_id > 286;
 
 INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, keyword, created_at, updated_at) VALUES
 	(1, 1, 1, '가슴', now(), now()),
@@ -303,7 +306,80 @@ INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, k
 	(210, 1, 2, '묵직', now(), now()),
 	(211, 1, 2, '무거', now(), now()),
 	(212, 11, 2, '가장심하', now(), now()),
-	(213, 11, 2, '제일심하', now(), now())
+	(213, 11, 2, '제일심하', now(), now()),
+	(214, 1, 1, '가심', now(), now()),
+	(215, 1, 2, '아퍼', now(), now()),
+	(216, 1, 2, '결리', now(), now()),
+	(217, 1, 2, '결려', now(), now()),
+	(218, 1, 2, '뻐개', now(), now()),
+	(219, 1, 2, '빠개', now(), now()),
+	(220, 2, 1, '혀가굳', now(), now()),
+	(221, 2, 1, '발음이새', now(), now()),
+	(222, 2, 1, '말이새', now(), now()),
+	(223, 3, 1, '까무러', now(), now()),
+	(224, 3, 1, '혼절', now(), now()),
+	(225, 3, 1, '졸도', now(), now()),
+	(226, 3, 1, '정신을놓', now(), now()),
+	(227, 3, 1, '대답이없', now(), now()),
+	(228, 3, 1, '대답을못', now(), now()),
+	(229, 4, 1, '숨이맥혀', now(), now()),
+	(230, 4, 1, '숨맥혀', now(), now()),
+	(231, 4, 1, '턱막혀', now(), now()),
+	(232, 4, 1, '턱턱막', now(), now()),
+	(233, 4, 1, '숨넘어가', now(), now()),
+	(234, 4, 1, '숨이넘어가', now(), now()),
+	(235, 4, 1, '숨이꼴딱', now(), now()),
+	(236, 4, 1, '숨이깔딱', now(), now()),
+	(237, 4, 1, '숨쉬기가버거', now(), now()),
+	(238, 4, 1, '숨쉬기버거', now(), now()),
+	(239, 5, 2, '안그쳐', now(), now()),
+	(240, 5, 2, '그치지않', now(), now()),
+	(241, 5, 2, '멈추질않', now(), now()),
+	(242, 5, 2, '멎질않', now(), now()),
+	(243, 6, 1, '왼짝팔', now(), now()),
+	(244, 6, 1, '오른짝팔', now(), now()),
+	(245, 6, 1, '왼짝다리', now(), now()),
+	(246, 6, 1, '오른짝다리', now(), now()),
+	(247, 6, 1, '한짝팔', now(), now()),
+	(248, 6, 1, '한짝다리', now(), now()),
+	(249, 6, 2, '안들려', now(), now()),
+	(250, 6, 2, '안올라가', now(), now()),
+	(251, 6, 2, '질질', now(), now()),
+	(252, 6, 2, '힘이쭉', now(), now()),
+	(253, 7, 1, '피를게', now(), now()),
+	(254, 8, 1, '숨이가뻐', now(), now()),
+	(255, 8, 1, '숨가뻐', now(), now()),
+	(256, 8, 1, '숨이벅차', now(), now()),
+	(257, 8, 1, '숨벅차', now(), now()),
+	(258, 8, 1, '헉헉', now(), now()),
+	(259, 9, 1, '왼짝팔', now(), now()),
+	(260, 9, 1, '오른짝팔', now(), now()),
+	(261, 9, 1, '왼짝다리', now(), now()),
+	(262, 9, 1, '오른짝다리', now(), now()),
+	(263, 9, 1, '한짝팔', now(), now()),
+	(264, 9, 1, '한짝다리', now(), now()),
+	(265, 10, 1, '안뵈', now(), now()),
+	(266, 11, 1, '골이', now(), now()),
+	(267, 11, 1, '골치', now(), now()),
+	(268, 11, 2, '빠개', now(), now()),
+	(269, 11, 2, '뻐개', now(), now()),
+	(270, 1, 2, '아팠', now(), now()),
+	(271, 1, 2, '조였', now(), now()),
+	(272, 3, 1, '쓰러지셨', now(), now()),
+	(273, 3, 1, '쓰러지셔', now(), now()),
+	(274, 4, 1, '숨이넘어', now(), now()),
+	(275, 4, 1, '숨넘어', now(), now()),
+	(276, 4, 1, '입술이파래', now(), now()),
+	(277, 4, 1, '입술이퍼래', now(), now()),
+	(278, 6, 2, '힘이빠졌', now(), now()),
+	(279, 8, 1, '숨이찼', now(), now()),
+	(280, 8, 1, '숨찼', now(), now()),
+	(281, 9, 2, '저렸', now(), now()),
+	(282, 10, 1, '안보였', now(), now()),
+	(283, 11, 2, '깨지', now(), now()),
+	(284, 11, 2, '터지', now(), now()),
+	(285, 11, 2, '가장심해', now(), now()),
+	(286, 11, 2, '제일심해', now(), now())
 ON CONFLICT (red_flag_keyword_id) DO UPDATE SET red_flag_rule_id = EXCLUDED.red_flag_rule_id,
 	group_no = EXCLUDED.group_no, keyword = EXCLUDED.keyword, updated_at = now();
 
