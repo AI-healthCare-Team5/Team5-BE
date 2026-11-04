@@ -50,8 +50,8 @@ public class IntakeService {
 
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 	private static final Set<String> YES_NO_UNKNOWN = Set.of("YES", "NO", "UNKNOWN");
-	private static final String TOO_LONG_REASON = IntakeStartRequest.MAX_TEXT_LENGTH + "자까지 입력할 수 있어요";
 	private static final Set<String> NON_CLINICAL_DEPARTMENTS = Set.of("00", "16", "17", "18", "19", "20", "22", "25", "26");
+	private static final String TOO_LONG_REASON = IntakeStartRequest.MAX_TEXT_LENGTH + "자까지 입력할 수 있어요";
 
 	private final IntakeStore intakeStore;
 	private final IntakeAi intakeAi;
