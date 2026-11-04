@@ -52,3 +52,63 @@ INSERT INTO department (department_code, department_name, created_at, updated_at
 	('25', '직업환경의학과', now(), now()),
 	('26', '예방의학과', now(), now())
 ON CONFLICT (department_code) DO NOTHING;
+
+-- 위험 신호 규칙 초안 (의료 검토 전). 같은 group_no는 OR, 다른 group_no끼리는 AND, priority가 작을수록 먼저
+-- 키워드는 띄어쓰기 없이 적는다 (판정할 때 입력의 띄어쓰기를 지우고 비교한다)
+INSERT INTO red_flag_rule (red_flag_rule_id, rule_name, category, priority, is_active, created_at, updated_at) VALUES
+	(1, '흉통', 'CHEST_PAIN', 1, TRUE, now(), now()),
+	(2, '뇌졸중 의심', 'STROKE', 1, TRUE, now(), now()),
+	(3, '의식 저하', 'CONSCIOUSNESS', 1, TRUE, now(), now()),
+	(4, '호흡곤란', 'BREATHING', 2, TRUE, now(), now()),
+	(5, '심한 출혈', 'BLEEDING', 2, TRUE, now(), now())
+ON CONFLICT (red_flag_rule_id) DO NOTHING;
+
+INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, keyword, created_at, updated_at) VALUES
+	(1, 1, 1, '가슴', now(), now()),
+	(2, 1, 1, '흉부', now(), now()),
+	(3, 1, 2, '조이', now(), now()),
+	(4, 1, 2, '쥐어짜', now(), now()),
+	(5, 1, 2, '짓누르', now(), now()),
+	(6, 1, 2, '터질', now(), now()),
+	(7, 1, 2, '답답', now(), now()),
+	(8, 1, 2, '통증', now(), now()),
+	(9, 1, 2, '아프', now(), now()),
+	(10, 1, 2, '아파', now(), now()),
+	(11, 1, 2, '뻐근', now(), now()),
+	(12, 2, 1, '한쪽팔', now(), now()),
+	(13, 2, 1, '한쪽다리', now(), now()),
+	(14, 2, 1, '한쪽얼굴', now(), now()),
+	(15, 2, 1, '팔다리에힘이', now(), now()),
+	(16, 2, 1, '마비', now(), now()),
+	(17, 2, 1, '얼굴이돌아', now(), now()),
+	(18, 2, 1, '입이돌아', now(), now()),
+	(19, 2, 1, '말이어눌', now(), now()),
+	(20, 2, 1, '발음이이상', now(), now()),
+	(21, 2, 1, '말이안나와', now(), now()),
+	(22, 2, 1, '말이안나온', now(), now()),
+	(23, 3, 1, '의식이없', now(), now()),
+	(24, 3, 1, '의식을잃', now(), now()),
+	(25, 3, 1, '기절', now(), now()),
+	(26, 3, 1, '정신을잃', now(), now()),
+	(27, 3, 1, '깨어나지', now(), now()),
+	(28, 3, 1, '쓰러졌', now(), now()),
+	(29, 3, 1, '쓰러져서', now(), now()),
+	(30, 4, 1, '숨이차', now(), now()),
+	(31, 4, 1, '숨쉬기힘', now(), now()),
+	(32, 4, 1, '숨을못', now(), now()),
+	(33, 4, 1, '숨이안쉬', now(), now()),
+	(34, 4, 1, '호흡곤란', now(), now()),
+	(35, 4, 1, '호흡이힘', now(), now()),
+	(36, 4, 1, '숨이막', now(), now()),
+	(37, 4, 1, '숨쉬기어려', now(), now()),
+	(38, 5, 1, '피가', now(), now()),
+	(39, 5, 1, '출혈', now(), now()),
+	(40, 5, 1, '피를', now(), now()),
+	(41, 5, 2, '멈추지않', now(), now()),
+	(42, 5, 2, '안멈', now(), now()),
+	(43, 5, 2, '많이', now(), now()),
+	(44, 5, 2, '계속', now(), now()),
+	(45, 5, 2, '쏟아', now(), now()),
+	(46, 5, 2, '철철', now(), now()),
+	(47, 5, 2, '콸콸', now(), now())
+ON CONFLICT (red_flag_keyword_id) DO NOTHING;

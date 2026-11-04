@@ -21,6 +21,11 @@ app:
     version:
       record: v1
       guardian: v1
+  bedrock:
+    region: ${BEDROCK_REGION:ap-southeast-2}
+    model-id: ${BEDROCK_MODEL_ID:global.anthropic.claude-haiku-4-5-20251001-v1:0}
+    # 로컬은 aws configure로 만든 프로필 이름(예: jinryo). 비우면 기본 인증(EC2 Role 등)
+    profile: ${BEDROCK_PROFILE:}
   public-data:
     # 공공데이터포털 일반 인증키(Decoding). 없으면 병원 동기화를 건너뜀
     service-key: ${PUBLIC_DATA_API_KEY:}

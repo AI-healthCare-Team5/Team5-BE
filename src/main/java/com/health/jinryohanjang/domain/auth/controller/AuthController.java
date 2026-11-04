@@ -117,8 +117,9 @@ public class AuthController {
 	@SecurityRequirement(name = SwaggerConfig.GUEST_KEY)
 	@PostMapping("/logout")
 	public ResponseEntity<ApiResponse<Void>> logout(
-		@Parameter(hidden = true) @CookieValue(name = AuthCookies.REFRESH_TOKEN, required = false) String refreshToken) {
-		authService.logout(refreshToken);
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.REFRESH_TOKEN, required = false) String refreshToken,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey) {
+		authService.logout(refreshToken, guestKey);
 		HttpHeaders headers = new HttpHeaders();
 		headers.add(HttpHeaders.SET_COOKIE, authCookies.expire(AuthCookies.ACCESS_TOKEN).toString());
 		headers.add(HttpHeaders.SET_COOKIE, authCookies.expire(AuthCookies.REFRESH_TOKEN).toString());
