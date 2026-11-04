@@ -1,6 +1,8 @@
 package com.health.jinryohanjang.domain.intake.controller;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -9,13 +11,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.health.jinryohanjang.common.config.SwaggerConfig;
-import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
-import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.common.status.SuccessStatus;
+import com.health.jinryohanjang.domain.auth.security.AuthCookies;
+import com.health.jinryohanjang.domain.auth.security.LoginMember;
 import com.health.jinryohanjang.domain.intake.dto.AnswerRequest;
 import com.health.jinryohanjang.domain.intake.dto.IntakeCancelResponse;
 import com.health.jinryohanjang.domain.intake.dto.IntakeResponse;
 import com.health.jinryohanjang.domain.intake.dto.IntakeStartRequest;
+import com.health.jinryohanjang.domain.intake.repository.IntakeStore;
+import com.health.jinryohanjang.domain.intake.service.IntakeService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -23,7 +28,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 문진(질문·답변) API를 제공한다.
@@ -33,10 +40,16 @@ import jakarta.validation.constraints.Pattern;
 @SecurityRequirement(name = SwaggerConfig.ACCESS_TOKEN)
 @RestController
 @RequestMapping("/api/intakes")
+@RequiredArgsConstructor
 public class IntakeController {
 
 	public static final String UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 	public static final String INVALID_ID_MESSAGE = "문진 ID 형식이 올바르지 않아요";
+
+	private static final String CF_CONNECTING_IP = "CF-Connecting-IP";
+
+	private final IntakeService intakeService;
+	private final AuthCookies authCookies;
 
 	private static final String COMMON_ERRORS = """
 		| `AUTH_401` | accessToken이 있는데 만료·위조됨 → refresh 후 다시 (refresh도 401이면 비로그인으로 계속) |
@@ -59,8 +72,13 @@ public class IntakeController {
 		| `INTAKE_503` | AI 호출 실패. 잠시 후 다시 시도 |
 		""")
 	@PostMapping
-	public ResponseEntity<ApiResponse<IntakeResponse>> start(@Valid @RequestBody IntakeStartRequest request) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	public ResponseEntity<ApiResponse<IntakeResponse>> start(
+		@Valid @RequestBody IntakeStartRequest request,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId,
+		HttpServletRequest httpRequest) {
+		IntakeService.StartResult result = intakeService.start(request, guestKey, clientIp(httpRequest));
+		return ApiResponse.success(SuccessStatus.INTAKE_START_SUCCESS, result.response(), guestKeyCookie(result.guestKey()));
 	}
 
 	@Operation(summary = "문진 상태 조회 (S03)", description = """
@@ -74,8 +92,11 @@ public class IntakeController {
 	@GetMapping("/{intakeId}")
 	public ResponseEntity<ApiResponse<IntakeResponse>> get(
 		@Parameter(description = "문진 ID (UUID)", example = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d")
-		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.INTAKE_GET_SUCCESS, intakeService.get(intakeId, guestKey),
+			guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "답변 전송 (S03, S04a)", description = """
@@ -98,8 +119,11 @@ public class IntakeController {
 	public ResponseEntity<ApiResponse<IntakeResponse>> answer(
 		@Parameter(description = "문진 ID (UUID)", example = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d")
 		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId,
-		@Valid @RequestBody AnswerRequest request) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		@Valid @RequestBody AnswerRequest request,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.INTAKE_ANSWER_SUCCESS, intakeService.answer(intakeId, guestKey, request),
+			guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "이전 질문 (S03)", description = """
@@ -114,8 +138,11 @@ public class IntakeController {
 	@PostMapping("/{intakeId}/back")
 	public ResponseEntity<ApiResponse<IntakeResponse>> back(
 		@Parameter(description = "문진 ID (UUID)", example = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d")
-		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.INTAKE_BACK_SUCCESS, intakeService.back(intakeId, guestKey),
+			guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "문진 취소 (S06a)", description = """
@@ -131,7 +158,29 @@ public class IntakeController {
 	@PostMapping("/{intakeId}/cancel")
 	public ResponseEntity<ApiResponse<IntakeCancelResponse>> cancel(
 		@Parameter(description = "문진 ID (UUID)", example = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d")
-		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		@PathVariable @Pattern(regexp = UUID_PATTERN, message = INVALID_ID_MESSAGE) String intakeId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.INTAKE_CANCEL_SUCCESS, intakeService.cancel(intakeId, guestKey),
+			new HttpHeaders());
+	}
+
+	/**
+	 * guestKey 쿠키를 다시 1시간으로 늘린다. 문진 TTL과 같이 간다.
+	 */
+	private HttpHeaders guestKeyCookie(String guestKey) {
+		HttpHeaders headers = new HttpHeaders();
+		if (guestKey != null) {
+			headers.add(HttpHeaders.SET_COOKIE, authCookies.create(AuthCookies.GUEST_KEY, guestKey, IntakeStore.TTL).toString());
+		}
+		return headers;
+	}
+
+	/**
+	 * 프론트(Cloudflare) 프록시를 거치므로 CF-Connecting-IP를 먼저 본다.
+	 */
+	private String clientIp(HttpServletRequest request) {
+		String ip = request.getHeader(CF_CONNECTING_IP);
+		return ip != null && !ip.isBlank() ? ip.trim() : request.getRemoteAddr();
 	}
 }

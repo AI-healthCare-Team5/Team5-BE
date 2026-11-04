@@ -22,6 +22,7 @@ import com.health.jinryohanjang.domain.auth.security.AuthTokenStore;
 import com.health.jinryohanjang.domain.auth.security.JwtProvider;
 import com.health.jinryohanjang.domain.consent.enums.ConsentType;
 import com.health.jinryohanjang.domain.consent.repository.ConsentRepository;
+import com.health.jinryohanjang.domain.intake.repository.IntakeStore;
 import com.health.jinryohanjang.domain.member.entity.Member;
 import com.health.jinryohanjang.domain.member.repository.MemberRepository;
 
@@ -39,6 +40,7 @@ public class AuthService {
 	private final AuthTokenStore authTokenStore;
 	private final MemberRepository memberRepository;
 	private final ConsentRepository consentRepository;
+	private final IntakeStore intakeStore;
 	private final Set<String> allowedRedirectUris;
 	private final String recordConsentVersion;
 	private final SecureRandom secureRandom = new SecureRandom();
@@ -49,6 +51,7 @@ public class AuthService {
 		AuthTokenStore authTokenStore,
 		MemberRepository memberRepository,
 		ConsentRepository consentRepository,
+		IntakeStore intakeStore,
 		@Value("${app.kakao.allowed-redirect-uris:}") String allowedRedirectUris,
 		@Value("${app.consent.version.record}") String recordConsentVersion) {
 		this.kakaoOAuthClient = kakaoOAuthClient;
@@ -56,6 +59,7 @@ public class AuthService {
 		this.authTokenStore = authTokenStore;
 		this.memberRepository = memberRepository;
 		this.consentRepository = consentRepository;
+		this.intakeStore = intakeStore;
 		this.allowedRedirectUris = Arrays.stream(allowedRedirectUris.split(","))
 			.map(String::trim)
 			.filter(StringUtils::hasText)
@@ -110,10 +114,13 @@ public class AuthService {
 	}
 
 	/**
-	 * 토큰이 없거나 만료여도 성공한다. 유효한 refreshToken이면 Redis에서 지운다.
+	 * 토큰이 없거나 만료여도 성공한다. 유효한 refreshToken과, 공용 기기 대비로 guestKey의 문진도 지운다.
 	 */
-	public void logout(String refreshToken) {
+	public void logout(String refreshToken, String guestKey) {
 		authTokenStore.findMemberId(refreshToken).ifPresent(authTokenStore::deleteRefreshToken);
+		if (StringUtils.hasText(guestKey)) {
+			intakeStore.deleteAllByGuestKey(guestKey);
+		}
 	}
 
 	private Tokens issueTokens(Long memberId) {

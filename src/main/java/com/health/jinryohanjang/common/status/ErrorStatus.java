@@ -29,6 +29,7 @@ public enum ErrorStatus implements BaseStatus {
 	KAKAO_UNAVAILABLE("AUTH_502", HttpStatus.BAD_GATEWAY, "카카오 서버와 연결하지 못했어요. 잠시 후 다시 시도해 주세요."),
 
 	// intake
+	INTAKE_INVALID_INPUT("INTAKE_400", HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
 	INTAKE_INVALID_ANSWER("INTAKE_400", HttpStatus.BAD_REQUEST, "답변 형식이 올바르지 않아요. 다시 입력해 주세요."),
 	INTAKE_NO_PREVIOUS("INTAKE_400", HttpStatus.BAD_REQUEST, "이전 질문이 없어요."),
 	INTAKE_FORBIDDEN("INTAKE_403", HttpStatus.FORBIDDEN, "접근할 수 없는 문진이에요."),

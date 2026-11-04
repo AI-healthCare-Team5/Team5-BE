@@ -27,7 +27,14 @@ public enum SuccessStatus implements BaseStatus {
 	REGION_LIST_SUCCESS("HOSPITAL_200", HttpStatus.OK, "지역 목록 조회 성공"),
 
 	// intake
+	INTAKE_START_SUCCESS("INTAKE_201", HttpStatus.CREATED, "문진 시작 성공"),
+	INTAKE_GET_SUCCESS("INTAKE_200", HttpStatus.OK, "문진 조회 성공"),
 	INTAKE_ANSWER_SUCCESS("INTAKE_200", HttpStatus.OK, "답변 처리 성공"),
+	INTAKE_BACK_SUCCESS("INTAKE_200", HttpStatus.OK, "이전 질문으로 이동"),
+	INTAKE_CANCEL_SUCCESS("INTAKE_200", HttpStatus.OK, "문진 취소 성공"),
+
+	// department
+	DEPARTMENT_GET_SUCCESS("DEPARTMENT_200", HttpStatus.OK, "추천 진료과 조회 성공"),
 
 	// consent
 	CONSENT_ALREADY_AGREED("CONSENT_200", HttpStatus.OK, "이미 동의했어요."),
