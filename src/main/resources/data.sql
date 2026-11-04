@@ -88,7 +88,7 @@ INSERT INTO red_flag_rule (red_flag_rule_id, rule_name, category, priority, is_a
 ON CONFLICT (red_flag_rule_id) DO UPDATE SET rule_name = EXCLUDED.rule_name, category = EXCLUDED.category,
 	priority = EXCLUDED.priority, is_active = EXCLUDED.is_active, updated_at = now();
 
-DELETE FROM red_flag_keyword WHERE red_flag_keyword_id > 211;
+DELETE FROM red_flag_keyword WHERE red_flag_keyword_id > 213;
 
 INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, keyword, created_at, updated_at) VALUES
 	(1, 1, 1, '가슴', now(), now()),
@@ -301,7 +301,9 @@ INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, k
 	(208, 12, 2, '흥건', now(), now()),
 	(209, 1, 2, '불편', now(), now()),
 	(210, 1, 2, '묵직', now(), now()),
-	(211, 1, 2, '무거', now(), now())
+	(211, 1, 2, '무거', now(), now()),
+	(212, 11, 2, '가장심하', now(), now()),
+	(213, 11, 2, '제일심하', now(), now())
 ON CONFLICT (red_flag_keyword_id) DO UPDATE SET red_flag_rule_id = EXCLUDED.red_flag_rule_id,
 	group_no = EXCLUDED.group_no, keyword = EXCLUDED.keyword, updated_at = now();
 
