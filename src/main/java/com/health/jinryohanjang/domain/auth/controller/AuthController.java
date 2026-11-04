@@ -1,6 +1,8 @@
 package com.health.jinryohanjang.domain.auth.controller;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -9,12 +11,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.health.jinryohanjang.common.config.SwaggerConfig;
-import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
-import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.common.status.SuccessStatus;
 import com.health.jinryohanjang.domain.auth.dto.AuthorizeUrlResponse;
 import com.health.jinryohanjang.domain.auth.dto.KakaoLoginRequest;
 import com.health.jinryohanjang.domain.auth.dto.KakaoLoginResponse;
+import com.health.jinryohanjang.domain.auth.security.AuthCookies;
+import com.health.jinryohanjang.domain.auth.security.AuthTokenStore;
+import com.health.jinryohanjang.domain.auth.security.JwtProvider;
+import com.health.jinryohanjang.domain.auth.service.AuthService;
+import com.health.jinryohanjang.domain.auth.service.AuthService.AuthorizeUrl;
+import com.health.jinryohanjang.domain.auth.service.AuthService.LoginResult;
+import com.health.jinryohanjang.domain.auth.service.AuthService.Tokens;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,6 +30,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 카카오 로그인과 토큰 API를 제공한다.
@@ -29,7 +38,13 @@ import jakarta.validation.Valid;
 @Tag(name = "auth", description = "카카오 로그인, 토큰")
 @RestController
 @RequestMapping("/api/auth")
+@RequiredArgsConstructor
 public class AuthController {
+
+	private final AuthService authService;
+	private final AuthCookies authCookies;
+	private final JwtProvider jwtProvider;
+	private final AuthTokenStore authTokenStore;
 
 	@Operation(summary = "카카오 로그인 URL (L01)", description = """
 		카카오 인가 URL을 돌려주고 `oauthState` 쿠키(HttpOnly, 10분)를 발급한다. URL에 같은 state가 들어 있다.
@@ -44,7 +59,12 @@ public class AuthController {
 		@Parameter(description = "카카오가 돌려보낼 프론트 콜백 주소. 서버 허용 목록(로컬·배포)에 있어야 한다.",
 			example = "https://jinryohanjang.pages.dev/auth/kakao/callback")
 		@RequestParam String redirectUri) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		AuthorizeUrl authorizeUrl = authService.createAuthorizeUrl(redirectUri);
+		HttpHeaders headers = new HttpHeaders();
+		headers.add(HttpHeaders.SET_COOKIE,
+			authCookies.create(AuthCookies.OAUTH_STATE, authorizeUrl.state(), AuthCookies.OAUTH_STATE_TTL).toString());
+		return ApiResponse.success(SuccessStatus.AUTHORIZE_URL_SUCCESS,
+			new AuthorizeUrlResponse(authorizeUrl.url()), headers);
 	}
 
 	@Operation(summary = "카카오 로그인 (L01, L01a)", description = """
@@ -60,8 +80,13 @@ public class AuthController {
 		""")
 	@SecurityRequirement(name = SwaggerConfig.OAUTH_STATE)
 	@PostMapping("/kakao/login")
-	public ResponseEntity<ApiResponse<KakaoLoginResponse>> login(@Valid @RequestBody KakaoLoginRequest request) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	public ResponseEntity<ApiResponse<KakaoLoginResponse>> login(
+		@Valid @RequestBody KakaoLoginRequest request,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.OAUTH_STATE, required = false) String savedState) {
+		LoginResult result = authService.login(request.code(), request.state(), savedState, request.redirectUri());
+		HttpHeaders headers = tokenCookies(result.tokens());
+		headers.add(HttpHeaders.SET_COOKIE, authCookies.expire(AuthCookies.OAUTH_STATE).toString());
+		return ApiResponse.success(SuccessStatus.LOGIN_SUCCESS, result.response(), headers);
 	}
 
 	@Operation(summary = "토큰 재발급", description = """
@@ -74,8 +99,10 @@ public class AuthController {
 		""")
 	@SecurityRequirement(name = SwaggerConfig.REFRESH_TOKEN)
 	@PostMapping("/refresh")
-	public ResponseEntity<ApiResponse<Void>> refresh() {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	public ResponseEntity<ApiResponse<Void>> refresh(
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.REFRESH_TOKEN, required = false) String refreshToken) {
+		Tokens tokens = authService.refresh(refreshToken);
+		return ApiResponse.success(SuccessStatus.REFRESH_SUCCESS, null, tokenCookies(tokens));
 	}
 
 	@Operation(summary = "로그아웃 (P01)", description = """
@@ -89,7 +116,22 @@ public class AuthController {
 	@SecurityRequirement(name = SwaggerConfig.REFRESH_TOKEN)
 	@SecurityRequirement(name = SwaggerConfig.GUEST_KEY)
 	@PostMapping("/logout")
-	public ResponseEntity<ApiResponse<Void>> logout() {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	public ResponseEntity<ApiResponse<Void>> logout(
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.REFRESH_TOKEN, required = false) String refreshToken) {
+		authService.logout(refreshToken);
+		HttpHeaders headers = new HttpHeaders();
+		headers.add(HttpHeaders.SET_COOKIE, authCookies.expire(AuthCookies.ACCESS_TOKEN).toString());
+		headers.add(HttpHeaders.SET_COOKIE, authCookies.expire(AuthCookies.REFRESH_TOKEN).toString());
+		headers.add(HttpHeaders.SET_COOKIE, authCookies.expire(AuthCookies.GUEST_KEY).toString());
+		return ApiResponse.success(SuccessStatus.LOGOUT_SUCCESS, null, headers);
+	}
+
+	private HttpHeaders tokenCookies(Tokens tokens) {
+		HttpHeaders headers = new HttpHeaders();
+		headers.add(HttpHeaders.SET_COOKIE,
+			authCookies.create(AuthCookies.ACCESS_TOKEN, tokens.accessToken(), jwtProvider.getAccessTokenTtl()).toString());
+		headers.add(HttpHeaders.SET_COOKIE,
+			authCookies.create(AuthCookies.REFRESH_TOKEN, tokens.refreshToken(), authTokenStore.getRefreshTokenTtl()).toString());
+		return headers;
 	}
 }
