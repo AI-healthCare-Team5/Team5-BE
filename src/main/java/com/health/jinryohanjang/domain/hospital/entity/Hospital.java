@@ -85,4 +85,37 @@ public class Hospital extends BaseEntity {
 
 	@OneToMany(mappedBy = "hospital")
 	private List<HospitalSchedule> schedules = new ArrayList<>();
+
+	public static Hospital create(String ykiho) {
+		Hospital hospital = new Hospital();
+		hospital.ykiho = ykiho;
+		return hospital;
+	}
+
+	public void updateBasicInfo(Region region, String name, String phoneNumber, String address,
+		BigDecimal latitude, BigDecimal longitude, String hospitalType, LocalDateTime syncedAt) {
+		this.region = region;
+		this.name = name;
+		this.phoneNumber = phoneNumber;
+		this.address = address;
+		this.latitude = latitude;
+		this.longitude = longitude;
+		this.hospitalType = hospitalType;
+		this.syncedAt = syncedAt;
+	}
+
+	public void replaceDepartments(Set<Department> departments) {
+		this.departments.clear();
+		this.departments.addAll(departments);
+	}
+
+	public void markEmergencyRoom(String hpid) {
+		this.hasEmergencyRoom = true;
+		this.hpid = hpid;
+	}
+
+	public void clearEmergencyRoom() {
+		this.hasEmergencyRoom = false;
+		this.hpid = null;
+	}
 }

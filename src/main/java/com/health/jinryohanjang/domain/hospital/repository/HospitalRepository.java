@@ -3,6 +3,7 @@ package com.health.jinryohanjang.domain.hospital.repository;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -60,6 +61,10 @@ public interface HospitalRepository extends JpaRepository<Hospital, Long> {
 
 	@EntityGraph(attributePaths = "departments")
 	List<Hospital> findAllByIdIn(Collection<Long> ids);
+
+	Optional<Hospital> findByYkiho(String ykiho);
+
+	List<Hospital> findAllBySyncedAtBefore(LocalDateTime syncedAt);
 
 	@Query("SELECT max(h.syncedAt) FROM Hospital h")
 	LocalDateTime findLastSyncedAt();

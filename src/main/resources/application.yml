@@ -21,6 +21,13 @@ app:
     version:
       record: v1
       guardian: v1
+  public-data:
+    # 공공데이터포털 일반 인증키(Decoding). 없으면 병원 동기화를 건너뜀
+    service-key: ${PUBLIC_DATA_API_KEY:}
+  hospital-sync:
+    cron: "0 0 4 * * *"
+    # 병원 데이터가 비어 있으면 서버 시작 직후 한 번 동기화
+    run-on-startup: ${HOSPITAL_SYNC_ON_STARTUP:true}
 
 spring:
   application:
