@@ -50,6 +50,7 @@ public class IntakeService {
 
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 	private static final Set<String> YES_NO_UNKNOWN = Set.of("YES", "NO", "UNKNOWN");
+	private static final String TOO_LONG_REASON = IntakeStartRequest.MAX_TEXT_LENGTH + "자까지 입력할 수 있어요";
 	private static final Set<String> NON_CLINICAL_DEPARTMENTS = Set.of("00", "16", "17", "18", "19", "20", "22", "25", "26");
 
 	private final IntakeStore intakeStore;
@@ -104,6 +105,7 @@ public class IntakeService {
 
 	public IntakeResponse answer(String intakeId, String guestKey, AnswerRequest request) {
 		IntakeSession session = load(intakeId, guestKey);
+		validateAnswerLength(request);
 		rateLimiter.check(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, "intake-answer:guest:" + guestKey, 30,
 			Duration.ofMinutes(1));
 		if (!intakeStore.lock(intakeId)) {
@@ -270,9 +272,26 @@ public class IntakeService {
 		} else if (!StringUtils.hasText(request.text())) {
 			errors.add(new FieldErrorDetail("text", "증상을 말하거나 적어 주세요"));
 		}
+		if (tooLong(request.text())) {
+			errors.add(new FieldErrorDetail("text", TOO_LONG_REASON));
+		}
 		if (!errors.isEmpty()) {
 			throw new GeneralException(ErrorStatus.INTAKE_INVALID_INPUT, Map.of("errors", errors));
 		}
+	}
+
+	/**
+	 * 위험 신호 검사와 AI 호출 전에 답변 길이를 확인한다.
+	 */
+	private void validateAnswerLength(AnswerRequest request) {
+		if (tooLong(request.answer())) {
+			throw new GeneralException(ErrorStatus.INTAKE_INVALID_INPUT,
+				Map.of("errors", List.of(new FieldErrorDetail("answer", TOO_LONG_REASON))));
+		}
+	}
+
+	private boolean tooLong(String value) {
+		return value != null && value.trim().length() > IntakeStartRequest.MAX_TEXT_LENGTH;
 	}
 
 	/**
