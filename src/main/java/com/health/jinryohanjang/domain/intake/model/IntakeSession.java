@@ -29,6 +29,7 @@ public class IntakeSession {
 
 	public static final int SYMPTOM_MAX_QUESTIONS = 7;
 	public static final int BASIC_INFO_QUESTIONS = 5;
+	public static final int MAX_REASK = 2;
 
 	private String intakeId;
 	private String guestKey;
@@ -45,6 +46,7 @@ public class IntakeSession {
 	private List<Answered> answered = new ArrayList<>();
 	private Question current;
 	private boolean reask;
+	private int reaskCount;
 	private String emergencyUtterance;
 	private RedFlagCategory redFlagCategory;
 	private String departmentCode;
@@ -88,10 +90,19 @@ public class IntakeSession {
 		this.stage = stage;
 		this.current = question;
 		this.reask = false;
+		this.reaskCount = 0;
 	}
 
 	public void askAgain() {
 		this.reask = true;
+		this.reaskCount++;
+	}
+
+	/**
+	 * 같은 질문을 MAX_REASK번 다시 물었는데도 못 알아들었는지. 그러면 더 묻지 않고 넘어간다.
+	 */
+	public boolean reaskLimitReached() {
+		return reaskCount >= MAX_REASK;
 	}
 
 	/**
@@ -114,6 +125,7 @@ public class IntakeSession {
 		this.current = last.question();
 		this.collected = new ArrayList<>(last.collectedBefore());
 		this.reask = false;
+		this.reaskCount = 0;
 		return true;
 	}
 

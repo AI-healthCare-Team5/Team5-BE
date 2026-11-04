@@ -19,6 +19,7 @@ import com.health.jinryohanjang.domain.intake.model.IntakeSession;
 import com.health.jinryohanjang.domain.intake.model.IntakeSession.Answered;
 import com.health.jinryohanjang.domain.intake.model.IntakeSession.Option;
 import com.health.jinryohanjang.domain.intake.service.BasicInfoQuestions;
+import com.health.jinryohanjang.domain.intake.service.IntakeAi;
 import com.health.jinryohanjang.domain.summary.enums.AgeGroup;
 import com.health.jinryohanjang.domain.summary.enums.Gender;
 import com.health.jinryohanjang.domain.summary.enums.SummaryStep;
@@ -94,10 +95,12 @@ public class SummaryGenerator {
 				return;
 			}
 
-			SummaryAi.HealthInfoResult healthInfo = summaryAi.summarizeHealthInfo(basicAnswer(session,
-				BasicInfoQuestions.MEDICATIONS), basicAnswer(session, BasicInfoQuestions.CONDITIONS),
-				basicAnswer(session, BasicInfoQuestions.ALLERGIES));
-			summary.fillHealthInfo(healthInfo.medications(), healthInfo.conditions(), healthInfo.allergies());
+			String medications = basicAnswer(session, BasicInfoQuestions.MEDICATIONS);
+			String conditions = basicAnswer(session, BasicInfoQuestions.CONDITIONS);
+			String allergies = basicAnswer(session, BasicInfoQuestions.ALLERGIES);
+			SummaryAi.HealthInfoResult healthInfo = summaryAi.summarizeHealthInfo(medications, conditions, allergies);
+			summary.fillHealthInfo(keepUserNumbers(healthInfo.medications(), medications),
+				keepUserNumbers(healthInfo.conditions(), conditions), keepUserNumbers(healthInfo.allergies(), allergies));
 			summary.stepDone(SummaryStep.HEALTH_INFO);
 			summary.stepInProgress(SummaryStep.DEPARTMENT);
 			if (!saveIfCurrent(summary)) {
@@ -150,11 +153,35 @@ public class SummaryGenerator {
 			int order = i + 1;
 			SummaryAi.ItemText text = texts.get(order);
 			String label = text != null ? text.label() : answer.question().text();
-			String value = answer.question().answerType() == AnswerType.FREE_TEXT && text != null && text.value() != null
-				? text.value() : readable(answer);
+			String value = answer.question().answerType() == AnswerType.FREE_TEXT
+				? freeTextValue(answer, text) : readable(answer);
 			items.add(new Summary.Item(order, label, answer.question().text(), value));
 		}
 		return items;
+	}
+
+	/**
+	 * 자유 답은 AI가 정리한 값을 쓰되, 사용자 말에 없는 숫자가 생겼으면 ("사흘" → "3일") 사용자가 한 말을 그대로 쓴다.
+	 */
+	private String freeTextValue(Answered answer, SummaryAi.ItemText text) {
+		if (text != null && text.value() != null && IntakeAi.keepsNumbers(text.value(), answer.rawAnswer())) {
+			return text.value();
+		}
+		return IntakeAi.keepsNumbers(answer.normalizedAnswer(), answer.rawAnswer())
+			? answer.normalizedAnswer() : answer.rawAnswer();
+	}
+
+	/**
+	 * 건강정보의 자세한 내용에 사용자 말에 없는 숫자가 생겼으면 사용자가 한 말을 그대로 쓴다.
+	 */
+	private List<Summary.HealthInfo> keepUserNumbers(List<Summary.HealthInfo> values, String source) {
+		if (values == null) {
+			return null;
+		}
+		return values.stream()
+			.map(value -> IntakeAi.keepsNumbers(value.detail(), source) ? value
+				: new Summary.HealthInfo(value.name(), source))
+			.toList();
 	}
 
 	private String readable(Answered answer) {
