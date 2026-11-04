@@ -33,6 +33,8 @@ import com.health.jinryohanjang.domain.intake.enums.Stage;
 import com.health.jinryohanjang.domain.intake.model.IntakeSession;
 import com.health.jinryohanjang.domain.intake.model.IntakeSession.Question;
 import com.health.jinryohanjang.domain.intake.repository.IntakeStore;
+import com.health.jinryohanjang.domain.summary.repository.SummaryStore;
+import com.health.jinryohanjang.domain.summary.service.SummaryGenerator;
 
 import lombok.RequiredArgsConstructor;
 
@@ -40,6 +42,7 @@ import lombok.RequiredArgsConstructor;
  * 문진 시작·답변·이전 질문·취소를 처리한다.
  * 증상 질문(SYMPTOM, 최대 7개)은 AI가 만들고, 기본 정보(BASIC_INFO) 5개는 고정 질문이다.
  * 말·글 입력마다 위험 신호를 먼저 검사하고, 걸리면 바로 EMERGENCY로 바꾼다.
+ * 문진이 COMPLETED 되면 요약지 생성을 바로 시작한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -54,6 +57,8 @@ public class IntakeService {
 	private final RedFlagDetector redFlagDetector;
 	private final DepartmentRepository departmentRepository;
 	private final RateLimiter rateLimiter;
+	private final SummaryStore summaryStore;
+	private final SummaryGenerator summaryGenerator;
 
 	public StartResult start(IntakeStartRequest request, String guestKey, String clientIp) {
 		rateLimiter.check(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, "intake-start:ip:" + clientIp, 10, Duration.ofMinutes(1));
@@ -125,6 +130,9 @@ public class IntakeService {
 				answerBasicInfo(session, request);
 			}
 			intakeStore.save(session);
+			if (session.getStatus() == IntakeStatus.COMPLETED) {
+				summaryGenerator.start(session);
+			}
 			return toResponse(session);
 		} finally {
 			intakeStore.unlock(intakeId);
@@ -145,6 +153,9 @@ public class IntakeService {
 
 	public IntakeCancelResponse cancel(String intakeId, String guestKey) {
 		IntakeSession session = load(intakeId, guestKey);
+		if (session.getSummaryId() != null) {
+			summaryStore.delete(session.getSummaryId(), session.getGuestKey());
+		}
 		intakeStore.delete(session);
 		return new IntakeCancelResponse(intakeId, IntakeStatus.CANCELED);
 	}

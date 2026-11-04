@@ -43,6 +43,14 @@ public class IntakeStore {
 		redisTemplate.expire(guestKey, TTL);
 	}
 
+	/**
+	 * 내용은 그대로 두고 남은 시간만 1시간으로 늘린다. 요약지를 보는 동안 다시 만들기에 쓸 문진이 지워지지 않게 한다.
+	 */
+	public void touch(String intakeId, String guestKey) {
+		redisTemplate.expire(KEY_PREFIX + intakeId, TTL);
+		redisTemplate.expire(GUEST_KEY_PREFIX + guestKey, TTL);
+	}
+
 	public void delete(IntakeSession session) {
 		redisTemplate.delete(KEY_PREFIX + session.getIntakeId());
 		redisTemplate.opsForSet().remove(GUEST_KEY_PREFIX + session.getGuestKey(), session.getIntakeId());
