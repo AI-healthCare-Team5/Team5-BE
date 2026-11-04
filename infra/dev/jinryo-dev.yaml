@@ -1,0 +1,830 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  진료한장 개발 환경 (서울). CloudFront(웹 + /api) -> EC2(Caddy, 앱, Redis) -> RDS PostgreSQL 16.
+  Bedrock(Claude Haiku, global 추론 프로필)과 Transcribe 스트리밍은 EC2 Role로 호출합니다.
+  운영 환경 리소스는 만들지 않습니다.
+
+Parameters:
+  GitHubSubject:
+    Type: String
+    Default: "repo:AI-healthCare-Team5@338623391/Team5-BE@1425129963:ref:refs/heads/develop"
+    Description: >-
+      배포 Role을 맡을 수 있는 GitHub OIDC 토큰의 sub 값. 2026-07-15 이후 만든 저장소라
+      조직 ID와 저장소 ID가 들어간 형식(repo:OWNER@ID/REPO@ID:...)을 씁니다.
+  CloudFrontPrefixListId:
+    Type: String
+    Default: pl-22a6434b
+    Description: 서울 리전의 com.amazonaws.global.cloudfront.origin-facing 관리형 접두사 목록 ID
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: >-
+      AL2023 x86_64 AMI ID를 고정합니다. 최신 AMI 파라미터를 쓰면 스택 업데이트 때마다 다시 조회되어
+      EC2가 교체될 수 있습니다. 바꿀 때만 의도적으로 새 값을 넣습니다.
+  InstanceType:
+    Type: String
+    Default: t3.small
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DbEngineVersion:
+    Type: String
+    Default: "16"
+    Description: 메이저 버전만 지정합니다. 마이너 버전은 자동 업그레이드를 따릅니다.
+  DbDeletionProtection:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      첫 생성 때는 false로 둡니다(생성 실패 시 되돌리기가 RDS를 지울 수 있도록).
+      생성이 성공하면 true로 바꿔 업데이트합니다.
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-haiku-5-5
+
+Resources:
+  # ---------------------------------------------------------------- 네트워크
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-igw
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: ap-northeast-2a
+      CidrBlock: 10.20.0.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-public-a
+
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: ap-northeast-2c
+      CidrBlock: 10.20.1.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-public-c
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: ap-northeast-2a
+      CidrBlock: 10.20.10.0/24
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-private-a
+
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: ap-northeast-2c
+      CidrBlock: 10.20.11.0/24
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-private-c
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-public-rt
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetCRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+
+  # private 서브넷은 인터넷 경로가 없습니다 (RDS 전용).
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-private-rt
+
+  PrivateSubnetARouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetCRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTable
+
+  # S3 트래픽을 AWS 내부로 보냅니다 (무료).
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PublicRouteTable
+        - !Ref PrivateRouteTable
+
+  # ---------------------------------------------------------------- 보안 그룹
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: jinryo-dev-web
+      GroupDescription: jinryo dev EC2 - HTTPS from CloudFront only, HTTP for ACME
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: HTTPS from CloudFront origin-facing servers
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourcePrefixListId: !Ref CloudFrontPrefixListId
+        - Description: HTTP for Lets Encrypt HTTP-01 and redirect only
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: All outbound (Bedrock, Transcribe, SSM, public APIs, image pulls)
+          IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: jinryo-dev-db
+      GroupDescription: jinryo dev RDS - PostgreSQL from EC2 only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: PostgreSQL from jinryo-dev-web
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+      SecurityGroupEgress:
+        - Description: No outbound
+          IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+
+  # ---------------------------------------------------------------- RDS
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: jinryo-dev-db-subnets
+      DBSubnetGroupDescription: jinryo dev private subnets
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetC
+
+  DbParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      DBParameterGroupName: jinryo-dev-pg16
+      Description: jinryo dev PostgreSQL 16
+      Family: postgres16
+      Parameters:
+        rds.force_ssl: "1"
+        timezone: Asia/Seoul
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: jinryo-dev-db
+      Engine: postgres
+      EngineVersion: !Ref DbEngineVersion
+      DBInstanceClass: !Ref DbInstanceClass
+      DBName: jinryo_dev
+      MasterUsername: jinryo_admin
+      ManageMasterUserPassword: true
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref DbParameterGroup
+      VPCSecurityGroups:
+        - !Ref DbSecurityGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: !Ref DbDeletionProtection
+      CopyTagsToSnapshot: true
+      AutoMinorVersionUpgrade: true
+      EnablePerformanceInsights: false
+      MonitoringInterval: 0
+
+  # ---------------------------------------------------------------- 비밀값
+  # CloudFront가 붙이고 Caddy가 확인하는 헤더 값. CloudFront를 거치지 않은 EC2 직접 접근을 막습니다.
+  OriginVerifySecret:
+    Type: AWS::SecretsManager::Secret
+    # 이름을 고정하지 않습니다. 삭제 대기 중인 같은 이름 때문에 다시 만들 때 막히지 않게 합니다.
+    Properties:
+      Description: jinryo-dev CloudFront -> EC2 origin verification header value
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: token
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  # ---------------------------------------------------------------- S3
+  # 버킷 이름은 CloudFormation이 자동으로 만듭니다(스택 이름 jinryo-dev로 시작).
+  # 고정 이름 + Retain이면 생성 실패 뒤 다시 만들 때 이름 충돌이 납니다.
+  # 객체가 남아 있는 버킷은 스택을 지워도 삭제되지 않으므로 데이터는 보호됩니다.
+  DeployBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-dev-images
+            Status: Enabled
+            Prefix: dev/
+            ExpirationInDays: 30
+
+  DeployBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DeployBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt DeployBucket.Arn
+              - !Sub ${DeployBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  WebBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${WebBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt WebBucket.Arn
+              - !Sub ${WebBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ---------------------------------------------------------------- IAM
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: jinryo-dev-ec2
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: jinryo-dev-ec2
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DownloadDeployImages
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ${DeployBucket.Arn}/dev/*
+              - Sid: ReadOriginVerifySecret
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref OriginVerifySecret
+              - Sid: InvokeClaudeViaGlobalProfile
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/global.${BedrockModelId}
+                  - !Sub arn:aws:bedrock:*::foundation-model/${BedrockModelId}
+                  - !Sub arn:aws:bedrock:::foundation-model/${BedrockModelId}
+              - Sid: TranscribeStreaming
+                Effect: Allow
+                Action:
+                  - transcribe:StartStreamTranscription
+                  - transcribe:StartStreamTranscriptionWebSocket
+                Resource: "*"
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: jinryo-dev-ec2
+      Roles:
+        - !Ref Ec2Role
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: jinryo-dev-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubSubject
+      Policies:
+        - PolicyName: jinryo-dev-github-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: UploadDeployImages
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${DeployBucket.Arn}/dev/*
+              - Sid: RunShellScriptDocument
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript
+              - Sid: RunOnDevInstanceOnly
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${AppInstance}
+              - Sid: ReadCommandResults
+                Effect: Allow
+                Action:
+                  - ssm:GetCommandInvocation
+                  - ssm:ListCommandInvocations
+                Resource: "*"
+
+  # ---------------------------------------------------------------- EC2
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-eip
+
+  # 네트워크 인터페이스를 먼저 만들고 EIP를 붙입니다.
+  # EC2가 시작되는 순간부터 고정 IP로 인터넷에 나갈 수 있어 첫 부팅 스크립트가 실패하지 않습니다.
+  AppNetworkInterface:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      Description: jinryo-dev-app primary interface
+      SubnetId: !Ref PublicSubnetA
+      GroupSet:
+        - !Ref WebSecurityGroup
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-app-eni
+
+  ElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIp.AllocationId
+      NetworkInterfaceId: !Ref AppNetworkInterface
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ElasticIpAssociation
+      - PublicDefaultRoute
+      - PublicSubnetARouteTable
+      - S3GatewayEndpoint
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref AppNetworkInterface
+          DeviceIndex: "0"
+      MetadataOptions:
+        HttpTokens: required
+        # 2: Docker 컨테이너 안의 앱이 IMDS로 EC2 Role 자격 증명을 받으려면 필요합니다.
+        HttpPutResponseHopLimit: 2
+        HttpEndpoint: enabled
+      # 크레딧 초과 사용 요금이 붙지 않도록 standard로 고정합니다 (계정 기본값은 unlimited).
+      CreditSpecification:
+        CPUCredits: standard
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: jinryo-dev-app
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            # 비밀값이 cloud-init 로그에 남지 않도록 set -x는 쓰지 않습니다.
+            set -euo pipefail
+
+            # 네트워크와 IAM 권한 전파가 늦을 수 있어 외부 호출은 최대 5분 재시도합니다.
+            retry() {
+              for _ in $(seq 1 30); do
+                if "$@"; then return 0; fi
+                sleep 10
+              done
+              return 1
+            }
+
+            retry dnf install -y docker
+            systemctl enable --now docker
+            retry docker pull redis:7
+            retry docker pull caddy:2
+
+            if [ ! -f /swapfile ]; then
+              dd if=/dev/zero of=/swapfile bs=1M count=2048
+              chmod 600 /swapfile
+              mkswap /swapfile
+              swapon /swapfile
+              echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+            fi
+
+            install -d -m 700 /opt/team5 /opt/team5/caddy
+            docker network inspect jinryo >/dev/null 2>&1 || docker network create jinryo
+
+            # Redis: 외부 포트를 열지 않고 jinryo 네트워크에서만 접근합니다.
+            docker inspect jinryo-redis >/dev/null 2>&1 || docker run -d \
+              --name jinryo-redis --network jinryo --restart unless-stopped \
+              redis:7 redis-server --save "" --appendonly no
+
+            ORIGIN_JSON=$(retry aws secretsmanager get-secret-value --region ${AWS::Region} \
+              --secret-id ${OriginVerifySecret} --query SecretString --output text)
+            ORIGIN_TOKEN=$(printf '%s' "$ORIGIN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+            unset ORIGIN_JSON
+
+            cat > /opt/team5/caddy/Caddyfile <<'CADDY'
+            {
+              admin off
+            }
+
+            {$SITE_HOST} {
+              # 443은 CloudFront 전용이라 TLS-ALPN 챌린지는 실패합니다. HTTP-01(80)만 씁니다.
+              tls {
+                issuer acme {
+                  disable_tlsalpn_challenge
+                }
+              }
+              @fromCloudFront header X-Origin-Verify {$ORIGIN_VERIFY}
+              handle @fromCloudFront {
+                reverse_proxy team5-be-dev:8080
+              }
+              handle {
+                respond 403
+              }
+            }
+            CADDY
+
+            umask 077
+            printf 'SITE_HOST=%s\nORIGIN_VERIFY=%s\n' "${SiteHost}" "$ORIGIN_TOKEN" > /opt/team5/caddy/caddy.env
+            unset ORIGIN_TOKEN
+
+            docker inspect jinryo-caddy >/dev/null 2>&1 || docker run -d \
+              --name jinryo-caddy --network jinryo --restart unless-stopped \
+              -p 80:80 -p 443:443 \
+              --env-file /opt/team5/caddy/caddy.env \
+              -v /opt/team5/caddy/Caddyfile:/etc/caddy/Caddyfile:ro \
+              -v caddy_data:/data -v caddy_config:/config \
+              caddy:2
+
+            # 앱 환경 변수. 비밀값은 여기 넣지 않고, 운영자가 SSM 세션으로 직접 채웁니다.
+            if [ ! -f /opt/team5/.env.dev ]; then
+              cat > /opt/team5/.env.dev <<ENVDEV
+            DB_URL=jdbc:postgresql://${DbHost}:5432/jinryo_dev?sslmode=require
+            REDIS_HOST=jinryo-redis
+            REDIS_PORT=6379
+            AWS_REGION=${AWS::Region}
+            BEDROCK_MODEL_ID=global.${BedrockModelId}
+            # 직접 채울 값: DB_USERNAME, DB_PASSWORD, DATA_ENCRYPTION_KEY, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET
+            ENVDEV
+              chmod 600 /opt/team5/.env.dev
+            fi
+          - SiteHost: !Join ["", [!Join ["-", !Split [".", !Ref ElasticIp]], ".sslip.io"]]
+            DbHost: !GetAtt Database.Endpoint.Address
+
+  # ---------------------------------------------------------------- CloudFront
+  WebOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: jinryo-dev-web-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # 확장자가 없는 경로(React 라우트)는 index.html로 돌려줍니다. /api/*에는 적용하지 않습니다.
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: jinryo-dev-spa-rewrite
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Rewrite extensionless paths to /index.html
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          if (request.uri.indexOf('.') === -1) {
+            request.uri = '/index.html';
+          }
+          return request;
+        }
+
+  # /api/* 요청에서 Cloudflare가 아닌 곳이 보낸 CF-Connecting-IP를 지웁니다.
+  # 프론트 Worker를 거친 요청만 이 헤더로 사용자 IP를 알리게 해, CloudFront를 직접 불러 IP를 꾸미는 것을 막습니다.
+  # 요청 자체는 막지 않습니다. 대역 출처: https://www.cloudflare.com/ips/ (2026-11-04 기준, 바뀌면 갱신)
+  ApiClientIpFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: jinryo-dev-api-client-ip
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Drop CF-Connecting-IP unless the viewer is Cloudflare
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        var V4 = [
+          ['173.245.48.0', 20], ['103.21.244.0', 22], ['103.22.200.0', 22], ['103.31.4.0', 22],
+          ['141.101.64.0', 18], ['108.162.192.0', 18], ['190.93.240.0', 20], ['188.114.96.0', 20],
+          ['197.234.240.0', 22], ['198.41.128.0', 17], ['162.158.0.0', 15], ['104.16.0.0', 13],
+          ['104.24.0.0', 14], ['172.64.0.0', 13], ['131.0.72.0', 22]
+        ];
+        var V6 = [
+          ['2400:cb00::', 32], ['2606:4700::', 32], ['2803:f800::', 32], ['2405:b500::', 32],
+          ['2405:8100::', 32], ['2a06:98c0::', 29], ['2c0f:f248::', 32]
+        ];
+
+        function v4(ip) {
+          var p = ip.split('.');
+          if (p.length !== 4) { return -1; }
+          var n = 0;
+          for (var i = 0; i < 4; i++) {
+            var x = parseInt(p[i], 10);
+            if (isNaN(x) || x < 0 || x > 255) { return -1; }
+            n = n * 256 + x;
+          }
+          return n;
+        }
+
+        // IPv6 주소의 앞 32비트(모든 Cloudflare 대역이 /32 이하)를 숫자로 돌려줍니다.
+        function v6Head(ip) {
+          var halves = ip.toLowerCase().split('::');
+          if (halves.length > 2) { return -1; }
+          var head = halves[0] === '' ? [] : halves[0].split(':');
+          var tail = halves.length === 2 && halves[1] !== '' ? halves[1].split(':') : [];
+          var groups = head;
+          if (halves.length === 2) {
+            var fill = 8 - head.length - tail.length;
+            for (var i = 0; i < fill; i++) { groups.push('0'); }
+            groups = groups.concat(tail);
+          }
+          if (groups.length !== 8) { return -1; }
+          var g0 = parseInt(groups[0], 16);
+          var g1 = parseInt(groups[1], 16);
+          if (isNaN(g0) || isNaN(g1)) { return -1; }
+          return g0 * 65536 + g1;
+        }
+
+        function inRange(n, base, bits) {
+          var size = Math.pow(2, 32 - bits);
+          return Math.floor(n / size) === Math.floor(base / size);
+        }
+
+        function fromCloudflare(ip) {
+          var i;
+          if (ip.indexOf(':') === -1) {
+            var n = v4(ip);
+            if (n < 0) { return false; }
+            for (i = 0; i < V4.length; i++) {
+              if (inRange(n, v4(V4[i][0]), V4[i][1])) { return true; }
+            }
+            return false;
+          }
+          var h = v6Head(ip);
+          if (h < 0) { return false; }
+          for (i = 0; i < V6.length; i++) {
+            if (inRange(h, v6Head(V6[i][0]), V6[i][1])) { return true; }
+          }
+          return false;
+        }
+
+        function handler(event) {
+          var request = event.request;
+          if (request.headers['cf-connecting-ip'] && !fromCloudflare(event.viewer.ip)) {
+            delete request.headers['cf-connecting-ip'];
+          }
+          return request;
+        }
+
+  # Host는 넘기지 않습니다(오리진 인증서와 맞추기 위해).
+  # 앱은 사용자 IP를 CF-Connecting-IP(프론트 Worker가 전달)로 판정합니다. CloudFront-Viewer-Address는 참고용으로만 넘깁니다.
+  # 주의: UserData 안의 "직접 채울 값" 주석은 옛 목록입니다. 고치면 EC2가 재시작되므로 EC2를 다시 만들 때 함께 고칩니다.
+  #       실제 필요한 값은 .env.example의 개발 서버(dev) 절을 따릅니다.
+  ApiOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: jinryo-dev-api
+        Comment: Forward cookies, query strings and API headers to EC2
+        CookiesConfig:
+          CookieBehavior: all
+        QueryStringsConfig:
+          QueryStringBehavior: all
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers:
+            - Accept
+            - Accept-Language
+            - Content-Type
+            - Origin
+            - Referer
+            - User-Agent
+            - CloudFront-Viewer-Address
+            # 프론트는 Cloudflare Workers가 /api를 이 배포로 넘깁니다(A안).
+            # 이때 CloudFront-Viewer-Address는 Cloudflare 서버 IP이므로, 실제 사용자 IP는 이 헤더로 받습니다.
+            - CF-Connecting-IP
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: jinryo dev (web + /api)
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_200
+        DefaultRootObject: index.html
+        Origins:
+          - Id: web
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api
+            DomainName: !Join ["", [!Join ["-", !Split [".", !Ref ElasticIp]], ".sslip.io"]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+              OriginSSLProtocols:
+                - TLSv1.2
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 5
+            OriginCustomHeaders:
+              - HeaderName: X-Origin-Verify
+                HeaderValue: !Sub "{{resolve:secretsmanager:${OriginVerifySecret}:SecretString:token}}"
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # 관리형 정책 CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt SpaRewriteFunction.FunctionMetadata.FunctionARN
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            # 관리형 정책 CachingDisabled
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: !Ref ApiOriginRequestPolicy
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ApiClientIpFunction.FunctionMetadata.FunctionARN
+
+Outputs:
+  WebUrl:
+    Description: 프론트와 API 공통 주소
+    Value: !Sub https://${Distribution.DomainName}
+  DistributionId:
+    Value: !Ref Distribution
+  WebBucketName:
+    Value: !Ref WebBucket
+  DeployBucketName:
+    Description: GitHub Secret DEPLOY_S3_BUCKET
+    Value: !Ref DeployBucket
+  DeployRoleArn:
+    Description: GitHub Secret AWS_DEPLOY_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn
+  AppInstanceId:
+    Description: SSM 배포 대상 인스턴스 ID
+    Value: !Ref AppInstance
+  OriginHost:
+    Description: CloudFront가 HTTPS로 접속하는 EC2 주소 (Caddy 인증서 이름)
+    Value: !Join ["", [!Join ["-", !Split [".", !Ref ElasticIp]], ".sslip.io"]]
+  DbEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  DbMasterSecretArn:
+    Description: RDS가 관리하는 마스터 비밀번호 위치 (Secrets Manager)
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
