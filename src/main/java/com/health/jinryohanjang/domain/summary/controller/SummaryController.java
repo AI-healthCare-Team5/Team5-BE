@@ -1,6 +1,8 @@
 package com.health.jinryohanjang.domain.summary.controller;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,21 +14,26 @@ import com.health.jinryohanjang.common.config.SwaggerConfig;
 import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
 import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.common.status.SuccessStatus;
+import com.health.jinryohanjang.domain.auth.security.AuthCookies;
+import com.health.jinryohanjang.domain.auth.security.LoginMember;
 import com.health.jinryohanjang.domain.intake.controller.IntakeController;
+import com.health.jinryohanjang.domain.intake.repository.IntakeStore;
 import com.health.jinryohanjang.domain.summary.dto.EmergencyCardResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryConfirmResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryRetryResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummarySaveResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryUpdateRequest;
+import com.health.jinryohanjang.domain.summary.service.SummaryService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 요약지와 응급 카드 API를 제공한다.
@@ -35,6 +42,7 @@ import jakarta.validation.constraints.Pattern;
 @SecurityRequirement(name = SwaggerConfig.GUEST_KEY)
 @SecurityRequirement(name = SwaggerConfig.ACCESS_TOKEN)
 @RestController
+@RequiredArgsConstructor
 public class SummaryController {
 
 	private static final String INVALID_SUMMARY_ID_MESSAGE = "요약지 ID 형식이 올바르지 않아요";
@@ -44,6 +52,9 @@ public class SummaryController {
 		| `SUMMARY_403` | guestKey가 없거나 이 요약지의 것이 아님 → S01 |
 		| `SUMMARY_404` | 요약지가 없거나 취소·만료로 삭제됨 → S01 |
 		""";
+
+	private final SummaryService summaryService;
+	private final AuthCookies authCookies;
 
 	@Operation(summary = "요약지 다시 만들기 (S06a)", description = """
 		생성에 실패(FAILED)한 요약지를 다시 만든다. 정상 흐름에서는 문진이 COMPLETED 될 때 서버가 자동으로 시작하므로 실패했을 때만 쓴다. summaryId는 그대로라 요약지 조회로 폴링하면 된다.
@@ -60,8 +71,11 @@ public class SummaryController {
 	public ResponseEntity<ApiResponse<SummaryRetryResponse>> retry(
 		@Parameter(description = "문진 ID (UUID)", example = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d")
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = IntakeController.INVALID_ID_MESSAGE)
-		String intakeId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		String intakeId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.SUMMARY_RETRY_SUCCESS, summaryService.retry(intakeId, guestKey),
+			guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "요약지 조회 (S06a, S06)", description = """
@@ -78,8 +92,11 @@ public class SummaryController {
 	public ResponseEntity<ApiResponse<SummaryResponse>> get(
 		@Parameter(description = "요약지 ID (UUID)", example = "8b1d2e3f-4a5b-4c6d-9e7f-0a1b2c3d4e5f")
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = INVALID_SUMMARY_ID_MESSAGE)
-		String summaryId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		String summaryId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.SUMMARY_GET_SUCCESS, summaryService.get(summaryId, guestKey),
+			guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "요약지 수정 (S06)", description = """
@@ -96,8 +113,11 @@ public class SummaryController {
 		@Parameter(description = "요약지 ID (UUID)", example = "8b1d2e3f-4a5b-4c6d-9e7f-0a1b2c3d4e5f")
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = INVALID_SUMMARY_ID_MESSAGE)
 		String summaryId,
-		@Valid @RequestBody SummaryUpdateRequest request) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		@RequestBody SummaryUpdateRequest request,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.SUMMARY_UPDATE_SUCCESS,
+			summaryService.update(summaryId, guestKey, request), guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "요약지 확인 (S06)", description = """
@@ -112,8 +132,11 @@ public class SummaryController {
 	public ResponseEntity<ApiResponse<SummaryConfirmResponse>> confirm(
 		@Parameter(description = "요약지 ID (UUID)", example = "8b1d2e3f-4a5b-4c6d-9e7f-0a1b2c3d4e5f")
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = INVALID_SUMMARY_ID_MESSAGE)
-		String summaryId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		String summaryId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.SUMMARY_CONFIRM_SUCCESS, summaryService.confirm(summaryId, guestKey),
+			guestKeyCookie(guestKey));
 	}
 
 	@Operation(summary = "내 기록에 보관 (S06)", description = """
@@ -155,5 +178,16 @@ public class SummaryController {
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = IntakeController.INVALID_ID_MESSAGE)
 		String intakeId) {
 		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	}
+
+	/**
+	 * guestKey 쿠키를 다시 1시간으로 늘린다. 문진·요약지 TTL과 같이 간다.
+	 */
+	private HttpHeaders guestKeyCookie(String guestKey) {
+		HttpHeaders headers = new HttpHeaders();
+		if (guestKey != null) {
+			headers.add(HttpHeaders.SET_COOKIE, authCookies.create(AuthCookies.GUEST_KEY, guestKey, IntakeStore.TTL).toString());
+		}
+		return headers;
 	}
 }

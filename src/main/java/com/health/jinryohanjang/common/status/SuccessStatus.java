@@ -36,6 +36,12 @@ public enum SuccessStatus implements BaseStatus {
 	// department
 	DEPARTMENT_GET_SUCCESS("DEPARTMENT_200", HttpStatus.OK, "추천 진료과 조회 성공"),
 
+	// summary
+	SUMMARY_GET_SUCCESS("SUMMARY_200", HttpStatus.OK, "요약지 조회 성공"),
+	SUMMARY_UPDATE_SUCCESS("SUMMARY_200", HttpStatus.OK, "요약지 수정 성공"),
+	SUMMARY_CONFIRM_SUCCESS("SUMMARY_200", HttpStatus.OK, "요약지 확인 성공"),
+	SUMMARY_RETRY_SUCCESS("SUMMARY_202", HttpStatus.ACCEPTED, "요약지 다시 만들기 시작"),
+
 	// consent
 	CONSENT_ALREADY_AGREED("CONSENT_200", HttpStatus.OK, "이미 동의했어요."),
 	CONSENT_AGREED("CONSENT_201", HttpStatus.CREATED, "동의 성공");

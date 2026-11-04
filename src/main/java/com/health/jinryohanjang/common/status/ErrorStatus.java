@@ -50,6 +50,7 @@ public enum ErrorStatus implements BaseStatus {
 	HOSPITAL_INVALID_INPUT("HOSPITAL_400", HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
 
 	// summary
+	SUMMARY_INVALID_INPUT("SUMMARY_400", HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
 	SUMMARY_FORBIDDEN("SUMMARY_403", HttpStatus.FORBIDDEN, "접근할 수 없는 요약지예요."),
 	SUMMARY_NOT_FOUND("SUMMARY_404", HttpStatus.NOT_FOUND, "요약지를 찾을 수 없어요. 처음부터 다시 시작해 주세요."),
 	RECORD_FORBIDDEN("SUMMARY_403", HttpStatus.FORBIDDEN, "접근할 수 없는 기록이에요."),
@@ -58,6 +59,7 @@ public enum ErrorStatus implements BaseStatus {
 	SUMMARY_ALREADY_SAVED("SUMMARY_409", HttpStatus.CONFLICT, "이미 내 기록에 보관한 요약지예요."),
 	SUMMARY_NOT_EMERGENCY("SUMMARY_409", HttpStatus.CONFLICT, "응급 상황으로 판정된 문진이 아니에요."),
 	SUMMARY_NOT_FAILED("SUMMARY_409", HttpStatus.CONFLICT, "요약지를 다시 만들 필요가 없어요."),
+	SUMMARY_INTAKE_NOT_COMPLETED("SUMMARY_409", HttpStatus.CONFLICT, "아직 문진이 끝나지 않았어요."),
 	SUMMARY_AI_UNAVAILABLE("SUMMARY_503", HttpStatus.SERVICE_UNAVAILABLE, "지금은 요약지를 만들 수 없어요. 잠시 후 다시 시도해 주세요."),
 
 	// consent
