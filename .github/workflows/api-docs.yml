@@ -1,0 +1,125 @@
+# develop에 반영될 때마다 Swagger 명세를 GitHub Pages에 올린다.
+# 주소: https://ai-healthcare-team5.github.io/Team5-BE/
+# 서버를 잠깐 띄워 /v3/api-docs를 받는다. 외부 키(카카오·공공데이터·Bedrock)는 쓰지 않는다.
+name: API Docs
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build API docs
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: jinryohanjang
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: 123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build jar
+        run: ./gradlew bootJar
+
+      - name: Export OpenAPI spec
+        env:
+          # build.gradle의 테스트 전용 키와 같다. 실제 키가 아니다.
+          DATA_ENCRYPTION_KEY: ozLEBdDMruJfsfog5h0br/nAnwp46ZSDx6JkzWI7JUA=
+          JWT_SECRET: QdC1bS9n3lQm4Hq0Jx2Yw7Vt5Pz8Rk6Fa1Ue3Gi9Lo0=
+          HOSPITAL_SYNC_ON_STARTUP: "false"
+        run: |
+          java -Duser.timezone=Asia/Seoul -jar build/libs/jinryohanjang-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+          mkdir -p site
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/v3/api-docs -o site/openapi.json; then break; fi
+            sleep 2
+          done
+          if [ ! -s site/openapi.json ]; then cat app.log; exit 1; fi
+
+      - name: Write Swagger UI page
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          SHORT=${COMMIT:0:7}
+          UPDATED=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')
+          cat > site/index.html <<EOF
+          <!doctype html>
+          <html lang="ko">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>진료한장 API</title>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
+            <style>
+              body { margin: 0; background: #fbfcfe; font-family: system-ui, sans-serif; }
+              .band { background: #eef3f9; border-bottom: 1px solid #d6dfeb; padding: 16px 20px; color: #566274; font-size: 14px; }
+              .band b { color: #18212d; }
+              .swagger-ui .information-container, .swagger-ui .scheme-container { display: none; }
+            </style>
+          </head>
+          <body>
+            <div class="band"><b>진료한장 백엔드 API</b> · develop ${SHORT} · ${UPDATED} 갱신 · 명세만 보는 페이지라 요청 보내기는 꺼져 있어요 (로컬 서버의 /swagger-ui.html에서 호출)</div>
+            <div id="swagger-ui"></div>
+            <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+            <script>
+              SwaggerUIBundle({
+                url: "openapi.json",
+                dom_id: "#swagger-ui",
+                deepLinking: true,
+                docExpansion: "list",
+                defaultModelsExpandDepth: -1,
+                supportedSubmitMethods: [],
+                operationsSorter: "method",
+                tagsSorter: "alpha"
+              });
+            </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
