@@ -47,6 +47,7 @@ public class IntakeSession {
 	private boolean reask;
 	private String emergencyUtterance;
 	private RedFlagCategory redFlagCategory;
+	private OffsetDateTime emergencyAt;
 	private String departmentCode;
 	private String departmentName;
 	private String recommendReason;
@@ -117,8 +118,9 @@ public class IntakeSession {
 		return true;
 	}
 
-	public void emergency(String utterance, RedFlagCategory category) {
+	public void emergency(String utterance, RedFlagCategory category, OffsetDateTime emergencyAt) {
 		this.status = IntakeStatus.EMERGENCY;
+		this.emergencyAt = emergencyAt;
 		this.emergencyUtterance = utterance;
 		this.redFlagCategory = category;
 		this.current = null;

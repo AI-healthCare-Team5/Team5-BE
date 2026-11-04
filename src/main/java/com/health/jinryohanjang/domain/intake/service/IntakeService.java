@@ -65,7 +65,7 @@ public class IntakeService {
 		validateStart(request);
 		String ownerKey = StringUtils.hasText(guestKey) ? guestKey : UUID.randomUUID().toString();
 		IntakeSession session = IntakeSession.start(UUID.randomUUID().toString(), ownerKey, request.inputMode(),
-			trim(request.text()), OffsetDateTime.now(SEOUL).withNano(0));
+			trim(request.text()), now());
 
 		if (request.inputMode() == InputMode.BUTTON) {
 			session.recordSymptomInfo(buttonMainSymptom(request), request.bodyPart(), request.onset(),
@@ -73,7 +73,7 @@ public class IntakeService {
 			session.replaceCollected(List.of(request.bodyPart().getLabel(), request.onset().getLabel()));
 			Optional<RedFlagCategory> redFlag = redFlagDetector.detect(request.text());
 			if (redFlag.isPresent()) {
-				session.emergency(request.text(), redFlag.get());
+				session.emergency(request.text(), redFlag.get(), now());
 			} else {
 				session.ask(Stage.BASIC_INFO, BasicInfoQuestions.get(0));
 			}
@@ -81,7 +81,7 @@ public class IntakeService {
 			Optional<RedFlagCategory> redFlag = redFlagDetector.detect(request.text());
 			if (redFlag.isPresent()) {
 				session.recordSymptomInfo(trim(request.text()), null, null, null);
-				session.emergency(request.text(), redFlag.get());
+				session.emergency(request.text(), redFlag.get(), now());
 			} else {
 				IntakeAi.StartResult result = callAi(() -> intakeAi.understandSymptom(request.text()));
 				if (!result.understood()) {
@@ -123,7 +123,7 @@ public class IntakeService {
 			Optional<RedFlagCategory> redFlag = request.inputMode() == InputMode.BUTTON
 				? Optional.empty() : redFlagDetector.detect(request.answer());
 			if (redFlag.isPresent()) {
-				session.emergency(request.answer(), redFlag.get());
+				session.emergency(request.answer(), redFlag.get(), now());
 			} else if (session.getStage() == Stage.SYMPTOM) {
 				answerSymptom(session, request);
 			} else {
@@ -287,6 +287,10 @@ public class IntakeService {
 		} catch (AiUnavailableException e) {
 			throw new GeneralException(ErrorStatus.INTAKE_AI_UNAVAILABLE);
 		}
+	}
+
+	private OffsetDateTime now() {
+		return OffsetDateTime.now(SEOUL).withNano(0);
 	}
 
 	private String trim(String value) {

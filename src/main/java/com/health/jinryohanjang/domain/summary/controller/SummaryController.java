@@ -25,6 +25,7 @@ import com.health.jinryohanjang.domain.summary.dto.SummaryResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryRetryResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummarySaveResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryUpdateRequest;
+import com.health.jinryohanjang.domain.summary.service.EmergencyCardService;
 import com.health.jinryohanjang.domain.summary.service.SummaryService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -54,6 +55,7 @@ public class SummaryController {
 		""";
 
 	private final SummaryService summaryService;
+	private final EmergencyCardService emergencyCardService;
 	private final AuthCookies authCookies;
 
 	@Operation(summary = "요약지 다시 만들기 (S06a)", description = """
@@ -162,7 +164,7 @@ public class SummaryController {
 	}
 
 	@Operation(summary = "응급 카드 조회 (E02)", description = """
-		응급 전환된 문진의 응급 카드를 돌려준다. 못 물은 항목은 null("확인 못 했어요")이다. 보호자는 로그인했고 등록된 경우에만 전체 번호로 주고, 아니면 null이다. 현재 위치 주소는 프론트가 카카오맵 SDK로 변환한다.
+		응급 전환된 문진의 응급 카드를 돌려준다. 못 물은 항목은 null("확인 못 했어요")이다. 복용약·앓는 병·알레르기는 AI 없이 사용자가 한 말을 그대로 한 항목으로 준다. 보호자는 로그인했고 등록된 경우에만 전체 번호로 주고, 아니면 null이다 (보호자 기능이 생기기 전까지는 항상 null). 현재 위치 주소는 프론트가 카카오맵 SDK로 변환한다.
 
 		| code | 설명 |
 		| --- | --- |
@@ -176,8 +178,11 @@ public class SummaryController {
 	public ResponseEntity<ApiResponse<EmergencyCardResponse>> getEmergencyCard(
 		@Parameter(description = "문진 ID (UUID)", example = "3f2a9c1e-7b4d-4e8a-9c21-5d6f0a1b2c3d")
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = IntakeController.INVALID_ID_MESSAGE)
-		String intakeId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		String intakeId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
+		return ApiResponse.success(SuccessStatus.EMERGENCY_CARD_SUCCESS, emergencyCardService.get(intakeId, guestKey),
+			guestKeyCookie(guestKey));
 	}
 
 	/**
