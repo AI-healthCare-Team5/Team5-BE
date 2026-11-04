@@ -45,6 +45,9 @@ public enum ErrorStatus implements BaseStatus {
 	DEPARTMENT_NOT_COMPLETED("DEPARTMENT_409", HttpStatus.CONFLICT, "아직 문진이 끝나지 않았어요."),
 	DEPARTMENT_AI_UNAVAILABLE("DEPARTMENT_503", HttpStatus.SERVICE_UNAVAILABLE, "지금은 진료과를 추천할 수 없어요. 잠시 후 다시 시도해 주세요."),
 
+	// hospital
+	HOSPITAL_INVALID_INPUT("HOSPITAL_400", HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
+
 	// summary
 	SUMMARY_FORBIDDEN("SUMMARY_403", HttpStatus.FORBIDDEN, "접근할 수 없는 요약지예요."),
 	SUMMARY_NOT_FOUND("SUMMARY_404", HttpStatus.NOT_FOUND, "요약지를 찾을 수 없어요. 처음부터 다시 시작해 주세요."),

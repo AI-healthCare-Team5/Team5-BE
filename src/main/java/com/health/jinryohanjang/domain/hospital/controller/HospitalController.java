@@ -6,11 +6,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
-import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.common.status.SuccessStatus;
 import com.health.jinryohanjang.domain.hospital.dto.HealthCenterResponse;
 import com.health.jinryohanjang.domain.hospital.dto.HospitalSearchResponse;
+import com.health.jinryohanjang.domain.hospital.service.HospitalService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,6 +20,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 병원·응급실·보건소 검색 API를 제공한다. 토큰 없이 호출한다.
@@ -27,7 +28,10 @@ import jakarta.validation.constraints.Min;
 @Tag(name = "hospital", description = "병원 · 응급실 · 보건소 검색, 지역 목록")
 @RestController
 @RequestMapping("/api/hospitals")
+@RequiredArgsConstructor
 public class HospitalController {
+
+	private final HospitalService hospitalService;
 
 	private static final String LATITUDE_MESSAGE = "위도는 -90~90 사이여야 해요";
 	private static final String LONGITUDE_MESSAGE = "경도는 -180~180 사이여야 해요";
@@ -64,7 +68,8 @@ public class HospitalController {
 		@RequestParam(defaultValue = "3")
 		@Min(value = 1, message = "1곳 이상이어야 해요") @Max(value = 20, message = "20곳까지 볼 수 있어요")
 		int limit) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		return ApiResponse.success(SuccessStatus.HOSPITAL_SEARCH_SUCCESS,
+			hospitalService.search(departmentCode, latitude, longitude, regionCode, radius, limit));
 	}
 
 	@Operation(summary = "가까운 응급실 (E01)", description = """
@@ -97,7 +102,8 @@ public class HospitalController {
 		@RequestParam(defaultValue = "2")
 		@Min(value = 1, message = "1곳 이상이어야 해요") @Max(value = 10, message = "10곳까지 볼 수 있어요")
 		int limit) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		return ApiResponse.success(SuccessStatus.EMERGENCY_ROOM_SUCCESS,
+			hospitalService.searchEmergencyRooms(latitude, longitude, regionCode, radius, limit));
 	}
 
 	@Operation(summary = "가까운 보건소 (S05c)", description = """
@@ -122,6 +128,7 @@ public class HospitalController {
 		Double longitude,
 		@Parameter(description = "지역 코드. 위치가 없을 때 쓴다.", example = "51720")
 		@RequestParam(required = false) String regionCode) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		return ApiResponse.success(SuccessStatus.HEALTH_CENTER_SUCCESS,
+			hospitalService.findNearestHealthCenter(latitude, longitude, regionCode));
 	}
 }
