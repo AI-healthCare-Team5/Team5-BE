@@ -14,6 +14,12 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum SuccessStatus implements BaseStatus {
 
+	// auth
+	AUTHORIZE_URL_SUCCESS("AUTH_200", HttpStatus.OK, "카카오 로그인 URL 조회 성공"),
+	LOGIN_SUCCESS("AUTH_200", HttpStatus.OK, "로그인 성공"),
+	REFRESH_SUCCESS("AUTH_200", HttpStatus.OK, "토큰 재발급 성공"),
+	LOGOUT_SUCCESS("AUTH_200", HttpStatus.OK, "로그아웃 성공"),
+
 	// intake
 	INTAKE_ANSWER_SUCCESS("INTAKE_200", HttpStatus.OK, "답변 처리 성공"),
 

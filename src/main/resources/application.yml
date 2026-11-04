@@ -4,6 +4,23 @@ server:
 app:
   encryption:
     key: ${DATA_ENCRYPTION_KEY:}
+  jwt:
+    # 32바이트 이상을 Base64로 인코딩한 값 (예: openssl rand -base64 32)
+    secret: ${JWT_SECRET:}
+    access-token-ttl: 30m
+    refresh-token-ttl: 14d
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    # 카카오 콘솔에 등록한 프론트 콜백 주소. 쉼표로 여러 개
+    allowed-redirect-uris: ${KAKAO_ALLOWED_REDIRECT_URIS:http://localhost:5173/auth/kakao/callback}
+  cookie:
+    # 로컬 http에서 쿠키를 확인하려면 false
+    secure: ${COOKIE_SECURE:true}
+  consent:
+    version:
+      record: v1
+      guardian: v1
 
 spring:
   application:
