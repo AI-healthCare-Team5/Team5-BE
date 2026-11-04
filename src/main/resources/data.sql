@@ -59,7 +59,7 @@ ON CONFLICT (department_code) DO NOTHING;
 --   앱은 혈압·산소포화도를 잴 수 없어서, 가슴 통증과 갑자기 생긴 한쪽 저림은 보수적으로 응급으로 둔다.
 --   참고: 응급의료에 관한 법률 시행규칙 [별표 1] 응급증상, 질병관리청 국가건강정보포털 뇌졸중·급성 심근경색증
 --   근거 원문과 규칙별 대조: docs/red-flag/README.md
---   1. 흉통: Pre-KTAS 흉통(심장성) 2등급. 앱은 심장성인지 알 수 없어 가슴 통증은 항상 응급(예외)
+--   1. 흉통: Pre-KTAS 흉통(심장성) 2등급. 앱은 심장성인지 알 수 없어 가슴 통증·불편감은 항상 응급(예외)
 --   2. 뇌졸중 의심 (말·얼굴): Pre-KTAS 사지약화/뇌졸중 증상 24시간 이내 2등급, 질병관리청 뇌졸중 조기 증상(언어 장애)
 --   3. 의식 저하: Pre-KTAS 의식수준의 변화 1~2등급, 실신(전구증상 없음) 2등급
 --   4. 호흡곤란: Pre-KTAS 숨참 중등도 이상 2등급 (숨이 차다는 말만으로는 경증 3등급일 수 있어 8번 규칙으로 따로 봄)
@@ -88,7 +88,7 @@ INSERT INTO red_flag_rule (red_flag_rule_id, rule_name, category, priority, is_a
 ON CONFLICT (red_flag_rule_id) DO UPDATE SET rule_name = EXCLUDED.rule_name, category = EXCLUDED.category,
 	priority = EXCLUDED.priority, is_active = EXCLUDED.is_active, updated_at = now();
 
-DELETE FROM red_flag_keyword WHERE red_flag_keyword_id > 208;
+DELETE FROM red_flag_keyword WHERE red_flag_keyword_id > 211;
 
 INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, keyword, created_at, updated_at) VALUES
 	(1, 1, 1, '가슴', now(), now()),
@@ -298,7 +298,10 @@ INSERT INTO red_flag_keyword (red_flag_keyword_id, red_flag_rule_id, group_no, k
 	(205, 12, 2, '줄줄', now(), now()),
 	(206, 12, 2, '멈추지않', now(), now()),
 	(207, 12, 2, '안멈', now(), now()),
-	(208, 12, 2, '흥건', now(), now())
+	(208, 12, 2, '흥건', now(), now()),
+	(209, 1, 2, '불편', now(), now()),
+	(210, 1, 2, '묵직', now(), now()),
+	(211, 1, 2, '무거', now(), now())
 ON CONFLICT (red_flag_keyword_id) DO UPDATE SET red_flag_rule_id = EXCLUDED.red_flag_rule_id,
 	group_no = EXCLUDED.group_no, keyword = EXCLUDED.keyword, updated_at = now();
 
