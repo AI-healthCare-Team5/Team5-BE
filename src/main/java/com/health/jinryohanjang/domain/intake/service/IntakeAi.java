@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
@@ -28,14 +30,18 @@ import tools.jackson.databind.JsonNode;
 @RequiredArgsConstructor
 public class IntakeAi {
 
+	public static final String UNKNOWN_TEXT = "잘 모르겠어요";
+
 	private static final int MAX_TOKENS = 600;
+	private static final Pattern NUMBER = Pattern.compile("\\d+");
 
 	private static final String COMMON_RULES = """
 		너는 강원 지역 어르신이 병원에 가기 전에 증상을 정리하도록 돕는 문진 도우미다.
 		- 진단하거나 병명을 말하지 않는다.
 		- 질문은 한 번에 하나, 존댓말 해요체로 짧게(40자 안) 쓴다.
 		- 나이대, 성별, 복용약, 앓는 병, 알레르기는 나중에 따로 물으니 묻지 않는다.
-		- 날짜·기간·정도는 사용자가 한 말 그대로 쓰고 숫자로 바꾸거나 추측하지 않는다 (예: "사흘 전부터").
+		- 날짜·기간·횟수·정도는 사용자가 한 말 그대로 쓰고 숫자로 바꾸거나 추측하지 않는다.
+		  예: "사흘 전부터"는 "3일 전"이나 "4일 전"이 아니라 "사흘 전부터", "그저께부터"는 "2일 전"이 아니라 "그저께부터"로 쓴다.
 		- 반드시 JSON 객체 하나만 출력한다. 설명이나 코드 블록 표시를 붙이지 않는다.
 		""";
 
@@ -68,9 +74,13 @@ public class IntakeAi {
 		if (question == null || mainSymptom == null) {
 			throw new BedrockChatClient.AiUnavailableException("첫 질문을 만들지 못했습니다.");
 		}
-		return new StartResult(true, mainSymptom, enumOf(BodyPart.class, text(result, "bodyPart")),
-			enumOf(Onset.class, text(result, "onset")), text(result, "onsetDetail"), strings(result.path("collected")),
-			question);
+		Onset onset = enumOf(Onset.class, text(result, "onset"));
+		String onsetDetail = text(result, "onsetDetail");
+		if (!keepsNumbers(onsetDetail, text)) {
+			onsetDetail = onset != null ? onset.getLabel() : null;
+		}
+		return new StartResult(true, mainSymptom, enumOf(BodyPart.class, text(result, "bodyPart")), onset, onsetDetail,
+			withoutInventedNumbers(strings(result.path("collected")), text), question);
 	}
 
 	/**
@@ -86,9 +96,10 @@ public class IntakeAi {
 			- YES_NO_UNKNOWN 질문이면 normalizedAnswer는 YES, NO, UNKNOWN 중 하나다.
 			- SINGLE_CHOICE 질문이면 normalizedAnswer는 options의 code 중 하나다.
 			- FREE_TEXT 질문이면 normalizedAnswer는 답을 짧게 정리한 문장이다.
+			- 사용자가 잘 모르겠다고 하면 understood는 true이고, normalizedAnswer는 YES_NO_UNKNOWN 질문이면 UNKNOWN, 그 외에는 "%s"다.
 			- 답을 해석할 수 없으면 understood는 false다.
 			- 진료과를 고르고 의사에게 전할 만큼 정보가 모였으면 done은 true이고 nextQuestion은 null이다.
-			""" + (lastQuestion ? "- 이번이 마지막 증상 질문이라 done은 반드시 true다.\n" : "");
+			""".formatted(UNKNOWN_TEXT) + (lastQuestion ? "- 이번이 마지막 증상 질문이라 done은 반드시 true다.\n" : "");
 		String user = """
 			첫 말: %s
 			주된 증상: %s
@@ -102,13 +113,17 @@ public class IntakeAi {
 		if (!result.path("understood").asBoolean(false)) {
 			return SymptomStep.notUnderstood();
 		}
-		String normalized = buttonAnswer != null ? buttonAnswer : normalize(current, text(result, "normalizedAnswer"));
+		String answered = text(result, "normalizedAnswer");
+		String normalized = buttonAnswer != null ? buttonAnswer
+			: UNKNOWN_TEXT.equals(answered) ? answered : normalize(current, answered);
 		if (normalized == null) {
 			return SymptomStep.notUnderstood();
 		}
 		boolean done = lastQuestion || result.path("done").asBoolean(false);
 		Question next = done ? null : question(result.path("nextQuestion"));
-		return new SymptomStep(true, normalized, strings(result.path("collected")), done || next == null, next);
+		List<String> collected = withoutInventedNumbers(strings(result.path("collected")),
+			userWords(session) + " " + answer);
+		return new SymptomStep(true, normalized, collected, done || next == null, next);
 	}
 
 	/**
@@ -150,6 +165,42 @@ public class IntakeAi {
 			}
 		}
 		throw new BedrockChatClient.AiUnavailableException("후보에 없는 진료과를 골랐습니다.");
+	}
+
+	/**
+	 * AI가 쓴 값에 사용자 말(source)에 없는 숫자가 있는지 본다. "사흘 전부터"를 "4일 전"으로 바꿔 쓰는 것처럼
+	 * 기간·횟수를 지어낸 경우를 걸러 낸다. 숫자가 없거나 모두 source에 있으면 true다.
+	 */
+	public static boolean keepsNumbers(String value, String source) {
+		if (value == null) {
+			return true;
+		}
+		Matcher matcher = NUMBER.matcher(value);
+		while (matcher.find()) {
+			if (source == null || !source.contains(matcher.group())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private List<String> withoutInventedNumbers(List<String> values, String source) {
+		return values.stream().filter(value -> keepsNumbers(value, source)).toList();
+	}
+
+	/**
+	 * 사용자가 한 말과 이미 화면에 보인 정보(버튼 라벨 포함)를 이어 붙인다. 지어낸 숫자를 찾을 때 기준으로 쓴다.
+	 */
+	private String userWords(IntakeSession session) {
+		List<String> words = new ArrayList<>();
+		if (session.getInitialText() != null) {
+			words.add(session.getInitialText());
+		}
+		words.addAll(session.getCollected());
+		for (IntakeSession.Answered answer : session.getAnswered()) {
+			words.add(answer.rawAnswer());
+		}
+		return String.join(" ", words);
 	}
 
 	private String history(IntakeSession session) {

@@ -175,12 +175,25 @@ public class IntakeService {
 		return session;
 	}
 
+	/**
+	 * 못 알아들으면 같은 질문을 다시 묻는다. MAX_REASK번 다시 물어도 못 알아들으면 "잘 모르겠어요"로 기록하고 넘어간다.
+	 * 그때도 AI가 다음 질문을 못 만들면 증상 질문을 끝내고 기본 정보로 간다.
+	 */
 	private void answerSymptom(IntakeSession session, AnswerRequest request) {
 		String buttonAnswer = request.inputMode() == InputMode.BUTTON ? request.answer() : null;
 		IntakeAi.SymptomStep step = callAi(() -> intakeAi.nextSymptomStep(session, request.answer(), buttonAnswer));
 		if (!step.understood()) {
-			session.askAgain();
-			return;
+			if (!session.reaskLimitReached()) {
+				session.askAgain();
+				return;
+			}
+			String unknown = unknownAnswer(session.getCurrent());
+			step = callAi(() -> intakeAi.nextSymptomStep(session, request.answer(), unknown));
+			if (!step.understood()) {
+				session.answer(request.inputMode(), request.answer(), unknown, session.getCollected());
+				session.ask(Stage.BASIC_INFO, BasicInfoQuestions.get(0));
+				return;
+			}
 		}
 		List<String> collected = step.collected().isEmpty() ? session.getCollected() : step.collected();
 		session.answer(request.inputMode(), request.answer(), step.normalizedAnswer(), collected);
@@ -189,6 +202,13 @@ public class IntakeService {
 		} else {
 			session.ask(Stage.SYMPTOM, step.nextQuestion());
 		}
+	}
+
+	/**
+	 * 다시 물어도 못 알아들은 답을 대신할 값이다. 네·아니요 질문은 UNKNOWN, 그 외에는 "잘 모르겠어요"다.
+	 */
+	private String unknownAnswer(Question question) {
+		return question.answerType() == AnswerType.YES_NO_UNKNOWN ? "UNKNOWN" : IntakeAi.UNKNOWN_TEXT;
 	}
 
 	private void answerBasicInfo(IntakeSession session, AnswerRequest request) {
