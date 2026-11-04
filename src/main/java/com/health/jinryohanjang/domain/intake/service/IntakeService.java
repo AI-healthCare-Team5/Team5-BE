@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -50,6 +51,7 @@ public class IntakeService {
 
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 	private static final Set<String> YES_NO_UNKNOWN = Set.of("YES", "NO", "UNKNOWN");
+	private static final Pattern AFFIRMATIVE = Pattern.compile("^(네|예|응|맞아|맞습니다|그래요|그렇|있어요|있습니다)");
 	private static final Set<String> NON_CLINICAL_DEPARTMENTS = Set.of("00", "16", "17", "18", "19", "20", "22", "25", "26");
 
 	private final IntakeStore intakeStore;
@@ -120,10 +122,9 @@ public class IntakeService {
 			}
 			validateAnswerFormat(current, request);
 
-			Optional<RedFlagCategory> redFlag = request.inputMode() == InputMode.BUTTON
-				? Optional.empty() : redFlagDetector.detect(request.answer());
-			if (redFlag.isPresent()) {
-				session.emergency(request.answer(), redFlag.get(), now());
+			RedFlagHit redFlag = detectRedFlag(session, current, request);
+			if (redFlag != null) {
+				session.emergency(redFlag.utterance(), redFlag.category(), now());
 			} else if (session.getStage() == Stage.SYMPTOM) {
 				answerSymptom(session, request);
 			} else {
@@ -202,6 +203,44 @@ public class IntakeService {
 		} else {
 			session.ask(Stage.SYMPTOM, step.nextQuestion());
 		}
+	}
+
+	/**
+	 * 답에서 위험 신호를 찾는다. 말·글은 답 자체를 검사한다.
+	 * 증상 질문에 "네"(버튼 YES 또는 말·글의 "네")로 답하거나 보기 버튼을 고르면, AI가 물은 질문과 고른 보기를 합쳐 검사한다.
+	 * AI에게는 위험 신호를 긍정형으로 묻게 하므로 "네"는 그 증상이 있다는 뜻이다.
+	 */
+	private RedFlagHit detectRedFlag(IntakeSession session, Question current, AnswerRequest request) {
+		if (request.inputMode() != InputMode.BUTTON) {
+			Optional<RedFlagCategory> inAnswer = redFlagDetector.detect(request.answer());
+			if (inAnswer.isPresent()) {
+				return new RedFlagHit(request.answer(), inAnswer.get());
+			}
+		}
+		if (session.getStage() != Stage.SYMPTOM) {
+			return null;
+		}
+		String chosen = switch (current.answerType()) {
+			case YES_NO_UNKNOWN -> isYes(request) ? "네" : null;
+			case SINGLE_CHOICE -> request.inputMode() == InputMode.BUTTON
+				? BasicInfoQuestions.labelOf(current, request.answer()) : null;
+			case FREE_TEXT -> null;
+		};
+		if (chosen == null) {
+			return null;
+		}
+		String utterance = current.text() + " → " + chosen;
+		return redFlagDetector.detect(current.text() + " " + chosen)
+			.map(category -> new RedFlagHit(utterance, category))
+			.orElse(null);
+	}
+
+	private boolean isYes(AnswerRequest request) {
+		String answer = request.answer().trim();
+		if (request.inputMode() == InputMode.BUTTON) {
+			return "YES".equals(answer);
+		}
+		return AFFIRMATIVE.matcher(answer).find();
 	}
 
 	/**
@@ -343,5 +382,8 @@ public class IntakeService {
 	}
 
 	public record StartResult(IntakeResponse response, String guestKey) {
+	}
+
+	private record RedFlagHit(String utterance, RedFlagCategory category) {
 	}
 }
