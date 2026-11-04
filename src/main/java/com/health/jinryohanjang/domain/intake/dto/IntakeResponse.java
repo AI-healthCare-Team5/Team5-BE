@@ -79,7 +79,8 @@ public record IntakeResponse(
 	}
 
 	public record Emergency(
-		@Schema(description = "위험 신호로 판정된 사용자 발화 (E01 \"말씀하신 내용\")", example = "가슴이 조이고 식은땀이 나요")
+		@Schema(description = "위험 신호로 판정된 사용자 발화 (E01 \"말씀하신 내용\"). AI 질문에 \"네\"로 답해 응급이 된 경우는 \"질문 → 네\" (예: \"가만히 있어도 숨이 차세요? → 네\")",
+			example = "가슴이 조이고 식은땀이 나요")
 		String userUtterance,
 
 		@Schema(description = "위험 신호 종류", example = "CHEST_PAIN")
