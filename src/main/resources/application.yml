@@ -36,6 +36,13 @@ spring:
 
   jpa:
     open-in-view: false
+    # data.sql(기초 데이터)을 테이블 생성 뒤에 실행
+    defer-datasource-initialization: true
+
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
     properties:
       hibernate:
         jdbc:
