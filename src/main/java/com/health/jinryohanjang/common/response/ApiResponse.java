@@ -1,5 +1,6 @@
 package com.health.jinryohanjang.common.response;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 
 import com.health.jinryohanjang.common.base.BaseStatus;
@@ -21,6 +22,15 @@ public record ApiResponse<T>(
 
 	public static <T> ResponseEntity<ApiResponse<T>> success(BaseStatus status, T result) {
 		return ResponseEntity.status(status.getHttpStatus())
+			.body(new ApiResponse<>(true, status.getCode(), status.getMessage(), result));
+	}
+
+	/**
+	 * 쿠키처럼 응답 헤더가 필요할 때 쓴다.
+	 */
+	public static <T> ResponseEntity<ApiResponse<T>> success(BaseStatus status, T result, HttpHeaders headers) {
+		return ResponseEntity.status(status.getHttpStatus())
+			.headers(headers)
 			.body(new ApiResponse<>(true, status.getCode(), status.getMessage(), result));
 	}
 

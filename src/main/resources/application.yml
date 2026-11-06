@@ -1,29 +1,82 @@
 server:
   port: 8080
+  tomcat:
+    # 기본값 2MB면 10MB를 조금 넘는 녹음에 STT_413 대신 연결이 끊김
+    max-swallow-size: 20MB
 
 app:
   encryption:
     key: ${DATA_ENCRYPTION_KEY:}
+  jwt:
+    # 32바이트 이상을 Base64로 인코딩한 값 (예: openssl rand -base64 32)
+    secret: ${JWT_SECRET:}
+    access-token-ttl: 30m
+    refresh-token-ttl: 14d
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    # 카카오 콘솔에 등록한 프론트 콜백 주소. 쉼표로 여러 개
+    allowed-redirect-uris: ${KAKAO_ALLOWED_REDIRECT_URIS:http://localhost:5173/auth/kakao/callback}
+  cookie:
+    # 로컬 http에서 쿠키를 확인하려면 false
+    secure: ${COOKIE_SECURE:true}
+  consent:
+    version:
+      record: v1
+      guardian: v1
+  bedrock:
+    region: ${BEDROCK_REGION:ap-southeast-2}
+    model-id: ${BEDROCK_MODEL_ID:global.anthropic.claude-haiku-4-5-20251001-v1:0}
+    # 로컬은 aws configure로 만든 프로필 이름(예: jinryo). 비우면 기본 인증(EC2 Role 등)
+    profile: ${BEDROCK_PROFILE:}
+  public-data:
+    # 공공데이터포털 일반 인증키(Decoding). 없으면 병원 동기화를 건너뜀
+    service-key: ${PUBLIC_DATA_API_KEY:}
+  hospital-sync:
+    cron: "0 0 4 * * *"
+    # 병원 데이터가 비어 있으면 서버 시작 직후 한 번 동기화
+    run-on-startup: ${HOSPITAL_SYNC_ON_STARTUP:true}
 
 spring:
   application:
     name: jinryohanjang
 
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/jinryohanjang}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:123}
+  profiles:
+    default: local
+
+  servlet:
+    multipart:
+      # STT 녹음 파일 최대 10MB (노션 명세). 넘으면 STT_413
+      max-file-size: 10MB
+      # 요청 크기는 multipart 경계 문자열을 포함하므로 파일 제한보다 조금 크게 둠
+      max-request-size: 11MB
 
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # 미지정 시 Redis 장애 때 요청이 최대 60초 대기함
+      timeout: 2s
+      connect-timeout: 2s
 
   jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
+    open-in-view: false
+    # data.sql(기초 데이터)을 테이블 생성 뒤에 실행
+    defer-datasource-initialization: true
+
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
     properties:
       hibernate:
         jdbc:
           time_zone: Asia/Seoul
+
+springdoc:
+  # 전역 예외 처리기의 응답이 모든 API에 붙지 않게 함 (API별 응답은 설명에 적음)
+  override-with-generic-response: false
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha

@@ -1,0 +1,14 @@
+# 로컬 개발 설정
+# SPRING_PROFILES_ACTIVE를 지정하지 않으면 이 프로필로 실행됩니다.
+# 기본값은 docker-compose.yml의 로컬 DB와 같습니다.
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/jinryohanjang}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:123}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true

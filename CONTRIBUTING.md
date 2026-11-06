@@ -8,7 +8,7 @@
 
 ## 개발 환경
 
-- JDK 17
+- JDK 21
 - Docker Desktop
 
 ```bash

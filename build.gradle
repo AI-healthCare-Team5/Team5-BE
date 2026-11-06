@@ -9,7 +9,7 @@ version = '0.0.1-SNAPSHOT'
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
+		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
 
@@ -22,6 +22,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	implementation platform('software.amazon.awssdk:bom:2.55.9')
+	implementation 'software.amazon.awssdk:bedrockruntime'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'
@@ -43,4 +49,5 @@ tasks.named('test') {
 	jvmArgs '-Duser.timezone=Asia/Seoul'
 	// 테스트 전용 키. 실제 키는 환경 변수로만 지정한다.
 	environment 'DATA_ENCRYPTION_KEY', 'ozLEBdDMruJfsfog5h0br/nAnwp46ZSDx6JkzWI7JUA='
+	environment 'JWT_SECRET', 'QdC1bS9n3lQm4Hq0Jx2Yw7Vt5Pz8Rk6Fa1Ue3Gi9Lo0='
 }

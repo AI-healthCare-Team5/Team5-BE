@@ -14,8 +14,34 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum SuccessStatus implements BaseStatus {
 
+	// auth
+	AUTHORIZE_URL_SUCCESS("AUTH_200", HttpStatus.OK, "카카오 로그인 URL 조회 성공"),
+	LOGIN_SUCCESS("AUTH_200", HttpStatus.OK, "로그인 성공"),
+	REFRESH_SUCCESS("AUTH_200", HttpStatus.OK, "토큰 재발급 성공"),
+	LOGOUT_SUCCESS("AUTH_200", HttpStatus.OK, "로그아웃 성공"),
+
+	// hospital
+	HOSPITAL_SEARCH_SUCCESS("HOSPITAL_200", HttpStatus.OK, "병원 검색 성공"),
+	EMERGENCY_ROOM_SUCCESS("HOSPITAL_200", HttpStatus.OK, "응급실 조회 성공"),
+	HEALTH_CENTER_SUCCESS("HOSPITAL_200", HttpStatus.OK, "보건소 조회 성공"),
+	REGION_LIST_SUCCESS("HOSPITAL_200", HttpStatus.OK, "지역 목록 조회 성공"),
+
 	// intake
+	INTAKE_START_SUCCESS("INTAKE_201", HttpStatus.CREATED, "문진 시작 성공"),
+	INTAKE_GET_SUCCESS("INTAKE_200", HttpStatus.OK, "문진 조회 성공"),
 	INTAKE_ANSWER_SUCCESS("INTAKE_200", HttpStatus.OK, "답변 처리 성공"),
+	INTAKE_BACK_SUCCESS("INTAKE_200", HttpStatus.OK, "이전 질문으로 이동"),
+	INTAKE_CANCEL_SUCCESS("INTAKE_200", HttpStatus.OK, "문진 취소 성공"),
+
+	// department
+	DEPARTMENT_GET_SUCCESS("DEPARTMENT_200", HttpStatus.OK, "추천 진료과 조회 성공"),
+
+	// summary
+	SUMMARY_GET_SUCCESS("SUMMARY_200", HttpStatus.OK, "요약지 조회 성공"),
+	SUMMARY_UPDATE_SUCCESS("SUMMARY_200", HttpStatus.OK, "요약지 수정 성공"),
+	SUMMARY_CONFIRM_SUCCESS("SUMMARY_200", HttpStatus.OK, "요약지 확인 성공"),
+	SUMMARY_RETRY_SUCCESS("SUMMARY_202", HttpStatus.ACCEPTED, "요약지 다시 만들기 시작"),
+	EMERGENCY_CARD_SUCCESS("SUMMARY_200", HttpStatus.OK, "응급 카드 조회 성공"),
 
 	// consent
 	CONSENT_ALREADY_AGREED("CONSENT_200", HttpStatus.OK, "이미 동의했어요."),

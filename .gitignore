@@ -39,3 +39,7 @@ out/
 ### Env ###
 .env
 .env.local
+.env.dev
+
+### Personal notes ###
+WORK_NOTES.md
