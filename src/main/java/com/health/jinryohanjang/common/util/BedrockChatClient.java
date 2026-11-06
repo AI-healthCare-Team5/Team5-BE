@@ -84,7 +84,8 @@ public class BedrockChatClient {
 					.role(ConversationRole.USER)
 					.content(ContentBlock.fromText(userPrompt))
 					.build())
-				.inferenceConfig(config -> config.maxTokens(maxTokens).temperature(0.2f)));
+				// Claude Haiku 5.5는 temperature를 받지 않습니다(ValidationException 400).
+				.inferenceConfig(config -> config.maxTokens(maxTokens)));
 			return response.output().message().content().stream()
 				.map(ContentBlock::text)
 				.filter(StringUtils::hasText)
