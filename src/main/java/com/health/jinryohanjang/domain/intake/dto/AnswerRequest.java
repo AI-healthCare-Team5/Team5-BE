@@ -16,7 +16,8 @@ public record AnswerRequest(
 	@NotNull(message = "입력 방식이 없어요")
 	InputMode inputMode,
 
-	@Schema(description = "답변. 말·글은 그대로, 버튼은 YES / NO / UNKNOWN 또는 선택지 code", example = "YES")
+	@Schema(description = "답변 (최대 500자). 말·글은 그대로, 버튼은 YES / NO / UNKNOWN 또는 선택지 code", example = "YES",
+		maxLength = IntakeStartRequest.MAX_TEXT_LENGTH)
 	@NotBlank(message = "답변을 입력해 주세요")
 	String answer
 ) {
