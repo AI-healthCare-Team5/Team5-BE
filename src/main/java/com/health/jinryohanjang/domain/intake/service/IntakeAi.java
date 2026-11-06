@@ -52,13 +52,29 @@ public class IntakeAi {
 		- 자유롭게 말해야 하는 질문만 FREE_TEXT다.
 		""";
 
+	/**
+	 * 보건복지부 「한국 병원 전 응급환자 중증도 분류기준」 2등급 신호 중 말로 확인할 수 있는 것이다 (docs/red-flag).
+	 * 사용자가 "네"라고 하면 질문과 답을 합쳐 위험 신호 규칙으로 다시 검사하므로, 긍정형으로 물어야 한다.
+	 */
+	private static final String RED_FLAG_QUESTIONS = """
+		위험 신호 확인:
+		- 증상 질문 중 한 번은 아래에서 그 증상에 맞는 위험 신호를 YES_NO_UNKNOWN 질문으로 묻는다. 이미 사용자가 말했으면 다시 묻지 않는다.
+		  가슴이 아프거나 불편함 → "식은땀이 나거나 숨쉬기 힘드세요?"
+		  숨이 참 → "가만히 있어도 숨이 차세요?"
+		  머리가 아픔 → "지금까지 겪은 두통 중에 가장 심하세요?"
+		  팔다리·얼굴이 이상하거나 어지러움 → "갑자기 한쪽 팔다리에 힘이 빠지거나 말이 어눌해졌어요?"
+		  눈이 이상함 → "갑자기 앞이 안 보이세요?"
+		  피가 남 → "눌러도 피가 계속 나세요?"
+		- 위험 신호를 묻는 질문은 긍정형으로 쓴다. "~지 않으세요?"처럼 부정형으로 묻지 않는다.
+		""";
+
 	private final BedrockChatClient bedrockChatClient;
 
 	/**
 	 * 첫 입력(말·글)에서 증상을 이해하고 첫 증상 질문을 만든다.
 	 */
 	public StartResult understandSymptom(String text) {
-		String system = COMMON_RULES + QUESTION_FORMAT + """
+		String system = COMMON_RULES + QUESTION_FORMAT + RED_FLAG_QUESTIONS + """
 			할 일: 사용자의 첫 말에서 증상을 정리하고 첫 질문을 만든다.
 			출력: {"understood": true|false, "mainSymptom": "주된 증상 짧게", "bodyPart": "%s 중 하나 또는 null",
 			"onset": "%s 중 하나 또는 null", "onsetDetail": "시작 시점 원문 또는 null", "collected": ["화면에 보일 짧은 요약 1~3개"],
@@ -89,7 +105,7 @@ public class IntakeAi {
 	public SymptomStep nextSymptomStep(IntakeSession session, String answer, String buttonAnswer) {
 		Question current = session.getCurrent();
 		boolean lastQuestion = session.answeredCount(session.getStage()) + 1 >= IntakeSession.SYMPTOM_MAX_QUESTIONS;
-		String system = COMMON_RULES + QUESTION_FORMAT + """
+		String system = COMMON_RULES + QUESTION_FORMAT + RED_FLAG_QUESTIONS + """
 			할 일: 지금 질문에 대한 사용자의 답을 해석하고, 필요하면 다음 증상 질문을 만든다.
 			출력: {"understood": true|false, "normalizedAnswer": "해석한 답", "collected": ["지금까지 모은 정보 짧게 1~6개"],
 			"done": true|false, "nextQuestion": 질문 형식 또는 null}
