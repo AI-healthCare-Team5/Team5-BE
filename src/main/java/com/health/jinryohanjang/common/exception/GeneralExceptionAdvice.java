@@ -7,25 +7,41 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.util.StringUtils;
+import org.springframework.validation.FieldError;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestCookieException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.ServletRequestBindingException;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.health.jinryohanjang.common.response.ApiResponse;
+import com.health.jinryohanjang.common.status.ErrorStatus;
 
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
 
 /**
  * 전역 예외 처리
@@ -37,6 +53,9 @@ import lombok.extern.slf4j.Slf4j;
 public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 
 	private static final Pattern DOMAIN_PACKAGE = Pattern.compile("\\.domain\\.([a-z]+)\\.");
+	private static final String GUEST_KEY = "guestKey";
+	private static final String REQUIRED = "필수 값이에요";
+	private static final String INVALID_FORMAT = "형식이 올바르지 않아요";
 
 	public record FieldErrorDetail(String field, String reason) {
 	}
@@ -50,6 +69,15 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 		return ResponseEntity.status(response.getStatusCode())
 			.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
 			.body(response.getBody());
+	}
+
+	/**
+	 * multipart 형식 오류는 클라이언트 잘못이므로 {도메인}_400으로 응답한다.
+	 * 크기 초과는 handleMaxUploadSizeExceededException이 처리한다.
+	 */
+	@ExceptionHandler(MultipartException.class)
+	public ResponseEntity<Object> handleMultipartException(MultipartException e, WebRequest request) {
+		return handleExceptionInternal(e, null, new HttpHeaders(), HttpStatus.BAD_REQUEST, request);
 	}
 
 	@ExceptionHandler(Exception.class)
@@ -71,6 +99,29 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 			messageOf(status),
 			badRequest ? Map.of("errors", fieldErrorsOf(ex)) : null);
 		return super.handleExceptionInternal(ex, response, headers, status, request);
+	}
+
+	/**
+	 * guestKey가 없으면 문진·요약지의 주인을 판정할 수 없으므로 명세대로 {도메인}_403으로 응답한다.
+	 */
+	@Override
+	protected ResponseEntity<Object> handleServletRequestBindingException(
+		ServletRequestBindingException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		if (ex instanceof MissingRequestCookieException e && GUEST_KEY.equals(e.getCookieName())) {
+			return handleExceptionInternal(ex, null, headers, HttpStatus.FORBIDDEN, request);
+		}
+		return super.handleServletRequestBindingException(ex, headers, status, request);
+	}
+
+	/**
+	 * 크기 초과는 컨트롤러를 찾기 전에 발생해 도메인을 읽을 수 없다. 업로드 API는 STT뿐이므로 STT_413으로 응답한다.
+	 */
+	@Override
+	protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+		MaxUploadSizeExceededException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		ErrorStatus error = ErrorStatus.STT_FILE_TOO_LARGE;
+		ApiResponse<Object> response = new ApiResponse<>(false, error.getCode(), error.getMessage(), null);
+		return ResponseEntity.status(error.getHttpStatus()).headers(headers).body(response);
 	}
 
 	private String domainOf(WebRequest request) {
@@ -95,26 +146,97 @@ public class GeneralExceptionAdvice extends ResponseEntityExceptionHandler {
 	private List<FieldErrorDetail> fieldErrorsOf(Exception ex) {
 		if (ex instanceof MethodArgumentNotValidException e) {
 			return e.getBindingResult().getFieldErrors().stream()
-				.map(error -> new FieldErrorDetail(error.getField(),
-					error.isBindingFailure() ? "형식이 올바르지 않아요" : error.getDefaultMessage()))
+				.map(error -> toDetail(error, ""))
 				.toList();
 		}
 		if (ex instanceof HandlerMethodValidationException e) {
 			return e.getParameterValidationResults().stream()
-				.flatMap(result -> result.getResolvableErrors().stream()
-					.map(error -> new FieldErrorDetail(result.getMethodParameter().getParameterName(),
-						error.getDefaultMessage())))
+				.flatMap(result -> detailsOf(result).stream())
 				.toList();
 		}
 		if (ex instanceof MissingServletRequestParameterException e) {
-			return List.of(new FieldErrorDetail(e.getParameterName(), "필수 값이에요"));
+			return List.of(new FieldErrorDetail(e.getParameterName(), REQUIRED));
 		}
 		if (ex instanceof MissingServletRequestPartException e) {
-			return List.of(new FieldErrorDetail(e.getRequestPartName(), "필수 값이에요"));
+			return List.of(new FieldErrorDetail(e.getRequestPartName(), REQUIRED));
+		}
+		if (ex instanceof MissingRequestCookieException e) {
+			return List.of(new FieldErrorDetail(e.getCookieName(), REQUIRED));
+		}
+		if (ex instanceof MissingRequestHeaderException e) {
+			return List.of(new FieldErrorDetail(e.getHeaderName(), REQUIRED));
 		}
 		if (ex instanceof TypeMismatchException e) {
-			return List.of(new FieldErrorDetail(e.getPropertyName(), "형식이 올바르지 않아요"));
+			return List.of(new FieldErrorDetail(e.getPropertyName(), INVALID_FORMAT));
+		}
+		if (ex instanceof HttpMessageNotReadableException e) {
+			String field = bodyFieldOf(e);
+			return field == null ? List.of() : List.of(new FieldErrorDetail(field, INVALID_FORMAT));
+		}
+		if (ex instanceof MultipartException) {
+			return List.of(new FieldErrorDetail("file", INVALID_FORMAT));
 		}
 		return List.of();
+	}
+
+	private List<FieldErrorDetail> detailsOf(ParameterValidationResult result) {
+		if (result instanceof ParameterErrors errors) {
+			String prefix = errors.getContainerIndex() == null ? "" : "[" + errors.getContainerIndex() + "].";
+			return errors.getFieldErrors().stream()
+				.map(error -> toDetail(error, prefix))
+				.toList();
+		}
+		String field = parameterNameOf(result.getMethodParameter());
+		return result.getResolvableErrors().stream()
+			.map(error -> new FieldErrorDetail(field, error.getDefaultMessage()))
+			.toList();
+	}
+
+	/**
+	 * field는 요청 필드 이름이어야 하므로 필드에 묶이지 않은 클래스 수준 오류는 담지 않는다.
+	 * 클래스 수준 제약은 검증기에서 addPropertyNode로 필드를 지정한다.
+	 */
+	private FieldErrorDetail toDetail(FieldError error, String prefix) {
+		return new FieldErrorDetail(prefix + error.getField(),
+			error.isBindingFailure() ? INVALID_FORMAT : error.getDefaultMessage());
+	}
+
+	/**
+	 * 클라이언트가 보낸 이름으로 응답하도록 어노테이션에 지정한 이름을 먼저 쓴다.
+	 */
+	private String parameterNameOf(MethodParameter parameter) {
+		RequestParam requestParam = parameter.getParameterAnnotation(RequestParam.class);
+		if (requestParam != null && StringUtils.hasText(requestParam.name())) {
+			return requestParam.name();
+		}
+		CookieValue cookieValue = parameter.getParameterAnnotation(CookieValue.class);
+		if (cookieValue != null && StringUtils.hasText(cookieValue.name())) {
+			return cookieValue.name();
+		}
+		RequestHeader requestHeader = parameter.getParameterAnnotation(RequestHeader.class);
+		if (requestHeader != null && StringUtils.hasText(requestHeader.name())) {
+			return requestHeader.name();
+		}
+		return parameter.getParameterName();
+	}
+
+	/**
+	 * 값의 형식이 틀리면 해당 필드를 돌려준다. 본문이 없거나 깨져 필드를 알 수 없으면 null이다.
+	 */
+	private String bodyFieldOf(HttpMessageNotReadableException ex) {
+		if (ex.getCause() instanceof JacksonException cause) {
+			StringBuilder field = new StringBuilder();
+			for (JacksonException.Reference reference : cause.getPath()) {
+				if (reference.getPropertyName() != null) {
+					field.append(field.isEmpty() ? "" : ".").append(reference.getPropertyName());
+				} else {
+					field.append("[").append(reference.getIndex()).append("]");
+				}
+			}
+			if (!field.isEmpty()) {
+				return field.toString();
+			}
+		}
+		return null;
 	}
 }

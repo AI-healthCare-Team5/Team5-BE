@@ -1,5 +1,8 @@
 server:
   port: 8080
+  tomcat:
+    # 기본값 2MB면 10MB를 조금 넘는 녹음에 STT_413 대신 연결이 끊김
+    max-swallow-size: 20MB
 
 app:
   encryption:
@@ -41,10 +44,20 @@ spring:
   profiles:
     default: local
 
+  servlet:
+    multipart:
+      # STT 녹음 파일 최대 10MB (노션 명세). 넘으면 STT_413
+      max-file-size: 10MB
+      # 요청 크기는 multipart 경계 문자열을 포함하므로 파일 제한보다 조금 크게 둠
+      max-request-size: 11MB
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # 미지정 시 Redis 장애 때 요청이 최대 60초 대기함
+      timeout: 2s
+      connect-timeout: 2s
 
   jpa:
     open-in-view: false

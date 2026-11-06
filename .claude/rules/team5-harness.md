@@ -58,9 +58,10 @@ throw GeneralException.tooManyRequests(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, sec
 아직 고쳐지지 않은 공통 코드 문제입니다. 고치려면 먼저 사용자에게 알립니다.
 
 - **도메인 판별:** `\.domain\.([a-z]+)\.` 패키지에서 읽습니다. `domain.medicalRecord`는 `COMMON_400`이 되고, `domain.medicalrecord`는 `MEDICALRECORD_400`이 됩니다. 도메인 패키지는 `AGENTS.md`의 도메인 이름을 소문자로 씁니다.
-- **빈 `errors`:** 깨진 JSON, 쿠키·헤더 누락(`guestKey` 포함), 클래스 수준 제약 위반은 `errors:[]`로 나갑니다. 프론트가 필드를 알아야 하면 처리를 추가해야 합니다.
-- **복합 검증:** `@Valid` 본문과 `@RequestParam` 제약을 함께 쓰면 `field`가 실제 필드명이 아닌 파라미터 이름으로 나옵니다.
-- **STT 업로드:** 크기 초과는 `STT_413`이 아니라 `COMMON_413`입니다. 잘못된 multipart 요청은 500입니다.
+- **STT 업로드:** 크기 초과는 컨트롤러와 상관없이 `STT_413`입니다. 업로드 API를 추가하면 처리를 다시 봐야 합니다. 제한은 `application.yml`의 `spring.servlet.multipart` 10MB이고, 60초 제한은 코드로 확인해야 합니다. 20MB를 넘는 요청은 Tomcat(`max-swallow-size`)이 연결을 끊어 `STT_413`을 받지 못합니다.
+- **boundary 없는 multipart:** 컨트롤러를 찾기 전에 실패해 `COMMON_400`이 됩니다.
+- **`guestKey` 누락:** `@CookieValue`로 받다가 쿠키가 없으면 Advice가 `{도메인}_403`으로 응답합니다(노션 명세). 문진·요약지 API에서 쓰고, 처음 발급하는 API(문진 시작, STT)에서는 `required = false`로 받습니다.
+- **`errors`가 빌 때:** 깨진 JSON처럼 필드를 알 수 없으면 `errors`는 `[]`입니다(노션 명세). 클래스 수준 제약은 필드에 묶이지 않으면 `errors`에 담기지 않으니, 검증기에서 `addPropertyNode("location")`처럼 필드를 지정합니다.
 - **필터:** 필터에서 던진 예외는 Advice를 거치지 않습니다. JWT 인증을 필터로 만들면 `AUTH_401` 응답을 직접 처리해야 합니다.
 - **날짜:** `BaseEntity`는 `LocalDateTime`입니다. 응답 DTO에 그대로 넣으면 `+09:00`이 빠지니 `OffsetDateTime`으로 변환합니다. 시각만 쓸 때는 `HH:mm`으로 맞춥니다.
 
@@ -79,7 +80,7 @@ throw GeneralException.tooManyRequests(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, sec
   - 공통 설정은 `application.yml`, DB 기본값과 `ddl-auto`, `show-sql`은 프로필 파일에 둡니다.
   - `dev`에 로컬 기본값을 넣지 않습니다. `dev,local`로 지정하면 local이 우선해 로컬 DB로 연결됩니다.
 - `dev`는 DB 값이 없으면 기동에 실패하지만, `REDIS_HOST`가 없으면 기동된 뒤 첫 Redis 호출에서 실패합니다.
-- Redis 타임아웃 2초는 `dev`에만 있습니다. `local`은 기본값이라 장애 시 최대 60초 대기합니다.
+- Redis 타임아웃은 공통 설정에 2초로 있습니다.
 - 새 환경 변수를 추가하면 `.env.example`을 함께 고칩니다. 실제 값은 커밋하지 않습니다.
 - `DATA_ENCRYPTION_KEY`가 없으면 서버가 뜨지 않습니다. 형식은 32바이트의 Base64입니다.
 
@@ -89,4 +90,4 @@ throw GeneralException.tooManyRequests(ErrorStatus.INTAKE_TOO_MANY_REQUESTS, sec
 - 6379 포트를 다른 프로젝트의 Redis가 쓰고 있으면 이 프로젝트의 Redis 컨테이너가 뜨지 않고, 앱이 그쪽에 연결될 수 있습니다.
 - 테스트 키는 Gradle `test` 태스크에서만 주입됩니다. IntelliJ 러너로 바로 돌리면 키가 없어 실패합니다.
 - **현재 테스트는 `contextLoads` 1개뿐이고 CI에는 Redis가 없습니다.** 빌드 통과는 앱이 뜬다는 뜻일 뿐, 응답 형식, 암호화, 호출 제한의 동작을 보증하지 않습니다. 변경한 동작은 직접 확인하고, 확인하지 못한 항목은 사용자에게 알립니다.
-- 커밋 `2846829`에서 단위 테스트 18개가 의도적으로 삭제됐습니다. 복원 여부는 팀이 정할 일이니 임의로 되살리지 않습니다.
+- 테스트 코드는 아직 만들지 않기로 했습니다. 사용자가 요청하기 전에는 추가하지 않습니다.
