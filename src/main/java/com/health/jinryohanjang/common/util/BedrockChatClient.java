@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
@@ -32,6 +33,13 @@ public class BedrockChatClient {
 
 	private static final Duration ATTEMPT_TIMEOUT = Duration.ofSeconds(10);
 	private static final int MAX_ATTEMPTS = 2;
+	/**
+	 * Claude 5 이후 모델은 생각(adaptive thinking)이 기본으로 켜져 있고, 생각 토큰도 maxTokens에 포함된다.
+	 * 끄지 않으면 짧은 maxTokens를 생각에 다 써서 답이 비어 버린다.
+	 */
+	private static final Document DISABLE_THINKING = Document.mapBuilder()
+		.putDocument("thinking", Document.mapBuilder().putString("type", "disabled").build())
+		.build();
 
 	private final BedrockRuntimeClient client;
 	private final String modelId;
@@ -84,7 +92,9 @@ public class BedrockChatClient {
 					.role(ConversationRole.USER)
 					.content(ContentBlock.fromText(userPrompt))
 					.build())
-				.inferenceConfig(config -> config.maxTokens(maxTokens).temperature(0.2f)));
+				// Claude Haiku 5.5는 temperature를 받지 않습니다(ValidationException 400).
+				.inferenceConfig(config -> config.maxTokens(maxTokens))
+				.additionalModelRequestFields(DISABLE_THINKING));
 			return response.output().message().content().stream()
 				.map(ContentBlock::text)
 				.filter(StringUtils::hasText)
