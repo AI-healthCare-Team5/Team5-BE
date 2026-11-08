@@ -8,17 +8,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.health.jinryohanjang.common.config.SwaggerConfig;
-import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
-import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.common.status.SuccessStatus;
+import com.health.jinryohanjang.domain.auth.security.LoginMember;
 import com.health.jinryohanjang.domain.guardian.dto.GuardianRequest;
 import com.health.jinryohanjang.domain.guardian.dto.GuardianResponse;
+import com.health.jinryohanjang.domain.guardian.service.GuardianService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 보호자 연락처 API를 제공한다.
@@ -27,7 +30,10 @@ import jakarta.validation.Valid;
 @SecurityRequirement(name = SwaggerConfig.ACCESS_TOKEN)
 @RestController
 @RequestMapping("/api/members/me/guardian")
+@RequiredArgsConstructor
 public class GuardianController {
+
+	private final GuardianService guardianService;
 
 	@Operation(summary = "보호자 등록·변경 (E03)", description = """
 		보호자와 보호자 연락처 저장 동의(GUARDIAN)를 한 번에 저장한다. 회원당 보호자는 1명이고, 지워진 행이 있으면 되살려 덮어쓴다. 응답 전화번호는 가운데를 가린다.
@@ -39,8 +45,10 @@ public class GuardianController {
 		| `AUTH_401` | 토큰 없음·만료·탈퇴한 회원 → refresh 한 번 시도, 그래도 401이면 L01 |
 		""")
 	@PutMapping
-	public ResponseEntity<ApiResponse<GuardianResponse>> upsert(@Valid @RequestBody GuardianRequest request) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	public ResponseEntity<ApiResponse<GuardianResponse>> upsert(
+		@Parameter(hidden = true) @LoginMember Long memberId,
+		@Valid @RequestBody GuardianRequest request) {
+		return ApiResponse.success(SuccessStatus.GUARDIAN_SAVE_SUCCESS, guardianService.save(memberId, request));
 	}
 
 	@Operation(summary = "보호자 삭제 (P01, E02)", description = """
@@ -53,7 +61,8 @@ public class GuardianController {
 		| `AUTH_401` | 토큰 없음·만료·탈퇴한 회원 → refresh 한 번 시도, 그래도 401이면 L01 |
 		""")
 	@DeleteMapping
-	public ResponseEntity<ApiResponse<Void>> delete() {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+	public ResponseEntity<ApiResponse<Void>> delete(@Parameter(hidden = true) @LoginMember Long memberId) {
+		guardianService.delete(memberId);
+		return ApiResponse.success(SuccessStatus.GUARDIAN_DELETE_SUCCESS);
 	}
 }

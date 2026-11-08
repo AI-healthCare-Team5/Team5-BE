@@ -45,7 +45,11 @@ public enum SuccessStatus implements BaseStatus {
 
 	// consent
 	CONSENT_ALREADY_AGREED("CONSENT_200", HttpStatus.OK, "이미 동의했어요."),
-	CONSENT_AGREED("CONSENT_201", HttpStatus.CREATED, "동의 성공");
+	CONSENT_AGREED("CONSENT_201", HttpStatus.CREATED, "동의 성공"),
+
+	// guardian
+	GUARDIAN_SAVE_SUCCESS("GUARDIAN_200", HttpStatus.OK, "보호자 등록 성공"),
+	GUARDIAN_DELETE_SUCCESS("GUARDIAN_200", HttpStatus.OK, "보호자 삭제 성공");
 
 	private final String code;
 	private final HttpStatus httpStatus;

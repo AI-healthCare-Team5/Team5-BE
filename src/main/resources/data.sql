@@ -384,3 +384,7 @@ ON CONFLICT (red_flag_keyword_id) DO UPDATE SET red_flag_rule_id = EXCLUDED.red_
 	group_no = EXCLUDED.group_no, keyword = EXCLUDED.keyword, updated_at = now();
 
 DELETE FROM red_flag_rule WHERE red_flag_rule_id > 12;
+
+-- 현재 유효한 동의(withdrawn_at이 없는 행)는 회원·종류별로 하나다. JPA가 만들 수 없는 부분 UNIQUE 인덱스라 여기서 만든다.
+CREATE UNIQUE INDEX IF NOT EXISTS uk_consent_member_type_active
+	ON consent (member_id, consent_type) WHERE withdrawn_at IS NULL;

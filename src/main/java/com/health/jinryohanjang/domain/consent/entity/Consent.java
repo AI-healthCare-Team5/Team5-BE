@@ -50,4 +50,19 @@ public class Consent extends BaseEntity {
 	private LocalDateTime agreedAt;
 
 	private LocalDateTime withdrawnAt;
+
+	private Consent(Member member, ConsentType consentType, String policyVersion, LocalDateTime agreedAt) {
+		this.member = member;
+		this.consentType = consentType;
+		this.policyVersion = policyVersion;
+		this.agreedAt = agreedAt;
+	}
+
+	public static Consent agree(Member member, ConsentType consentType, String policyVersion, LocalDateTime agreedAt) {
+		return new Consent(member, consentType, policyVersion, agreedAt);
+	}
+
+	public void withdraw(LocalDateTime withdrawnAt) {
+		this.withdrawnAt = withdrawnAt;
+	}
 }

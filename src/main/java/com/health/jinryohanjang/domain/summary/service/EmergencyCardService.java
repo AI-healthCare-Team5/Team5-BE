@@ -10,6 +10,7 @@ import org.springframework.util.StringUtils;
 
 import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.domain.guardian.service.GuardianService;
 import com.health.jinryohanjang.domain.intake.enums.IntakeStatus;
 import com.health.jinryohanjang.domain.intake.enums.Stage;
 import com.health.jinryohanjang.domain.intake.model.IntakeSession;
@@ -25,7 +26,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 응급 전환된 문진의 응급 카드(E02)를 만든다. 문진에서 모은 정보만 쓰고, 못 물은 항목은 null("확인 못 했어요")이다.
  * 응급 상황이라 AI를 부르지 않는다. 복용약·앓는 병·알레르기는 사용자가 한 말을 그대로 한 항목으로 담는다.
- * 보호자는 보호자 기능(M3)이 생기기 전까지 null이다.
+ * 보호자는 로그인했고 등록된 경우에만 전체 번호로 담고, 아니면 null이다.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,8 +36,9 @@ public class EmergencyCardService {
 	private static final int NONE_ANSWER_MAX_LENGTH = 10;
 
 	private final IntakeStore intakeStore;
+	private final GuardianService guardianService;
 
-	public EmergencyCardResponse get(String intakeId, String guestKey) {
+	public EmergencyCardResponse get(String intakeId, String guestKey, Long memberId) {
 		if (!StringUtils.hasText(guestKey)) {
 			throw new GeneralException(ErrorStatus.SUMMARY_FORBIDDEN);
 		}
@@ -63,7 +65,10 @@ public class EmergencyCardService {
 			healthInfo(basicAnswer(session, BasicInfoQuestions.MEDICATIONS)),
 			healthInfo(basicAnswer(session, BasicInfoQuestions.CONDITIONS)),
 			healthInfo(basicAnswer(session, BasicInfoQuestions.ALLERGIES)),
-			null);
+			guardianService.findActive(memberId)
+				.map(guardian -> new EmergencyCardResponse.Guardian(guardian.getRelation(),
+					guardian.formattedPhoneNumber()))
+				.orElse(null));
 	}
 
 	private Optional<String> basicAnswer(IntakeSession session, String questionId) {
