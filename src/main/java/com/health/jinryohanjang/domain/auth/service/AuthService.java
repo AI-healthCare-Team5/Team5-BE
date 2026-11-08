@@ -92,6 +92,7 @@ public class AuthService {
 			member = memberRepository.save(Member.join(kakaoUser.kakaoId(), nickname));
 		} else if (member.isWithdrawn()) {
 			member.restore(nickname);
+			authTokenStore.clearWithdrawn(member.getId());
 		} else {
 			member.changeNickname(nickname);
 		}
