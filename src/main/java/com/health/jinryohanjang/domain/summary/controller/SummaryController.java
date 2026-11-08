@@ -164,7 +164,7 @@ public class SummaryController {
 	}
 
 	@Operation(summary = "응급 카드 조회 (E02)", description = """
-		응급 전환된 문진의 응급 카드를 돌려준다. 못 물은 항목은 null("확인 못 했어요")이다. 복용약·앓는 병·알레르기는 AI 없이 사용자가 한 말을 그대로 한 항목으로 준다. 보호자는 로그인했고 등록된 경우에만 전체 번호로 주고, 아니면 null이다 (보호자 기능이 생기기 전까지는 항상 null). 현재 위치 주소는 프론트가 카카오맵 SDK로 변환한다.
+		응급 전환된 문진의 응급 카드를 돌려준다. 못 물은 항목은 null("확인 못 했어요")이다. 복용약·앓는 병·알레르기는 AI 없이 사용자가 한 말을 그대로 한 항목으로 준다. 보호자는 로그인했고 등록된 경우에만 전체 번호로 주고, 아니면 null이다. 현재 위치 주소는 프론트가 카카오맵 SDK로 변환한다.
 
 		| code | 설명 |
 		| --- | --- |
@@ -181,8 +181,8 @@ public class SummaryController {
 		String intakeId,
 		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
 		@Parameter(hidden = true) @LoginMember(required = false) Long memberId) {
-		return ApiResponse.success(SuccessStatus.EMERGENCY_CARD_SUCCESS, emergencyCardService.get(intakeId, guestKey),
-			guestKeyCookie(guestKey));
+		return ApiResponse.success(SuccessStatus.EMERGENCY_CARD_SUCCESS,
+			emergencyCardService.get(intakeId, guestKey, memberId), guestKeyCookie(guestKey));
 	}
 
 	/**
