@@ -66,6 +66,7 @@ public enum ErrorStatus implements BaseStatus {
 	CONSENT_RECORD_REQUIRED("CONSENT_403", HttpStatus.FORBIDDEN, "기록 저장에 동의해야 보관할 수 있어요."),
 
 	// guardian
+	GUARDIAN_INVALID_INPUT("GUARDIAN_400", HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
 	GUARDIAN_NOT_FOUND("GUARDIAN_404", HttpStatus.NOT_FOUND, "등록된 보호자가 없어요."),
 
 	// stt
