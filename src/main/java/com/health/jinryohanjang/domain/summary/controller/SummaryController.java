@@ -11,9 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.health.jinryohanjang.common.config.SwaggerConfig;
-import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
-import com.health.jinryohanjang.common.status.ErrorStatus;
 import com.health.jinryohanjang.common.status.SuccessStatus;
 import com.health.jinryohanjang.domain.auth.security.AuthCookies;
 import com.health.jinryohanjang.domain.auth.security.LoginMember;
@@ -26,6 +24,7 @@ import com.health.jinryohanjang.domain.summary.dto.SummaryRetryResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummarySaveResponse;
 import com.health.jinryohanjang.domain.summary.dto.SummaryUpdateRequest;
 import com.health.jinryohanjang.domain.summary.service.EmergencyCardService;
+import com.health.jinryohanjang.domain.summary.service.RecordService;
 import com.health.jinryohanjang.domain.summary.service.SummaryService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -56,6 +55,7 @@ public class SummaryController {
 
 	private final SummaryService summaryService;
 	private final EmergencyCardService emergencyCardService;
+	private final RecordService recordService;
 	private final AuthCookies authCookies;
 
 	@Operation(summary = "요약지 다시 만들기 (S06a)", description = """
@@ -159,8 +159,10 @@ public class SummaryController {
 	public ResponseEntity<ApiResponse<SummarySaveResponse>> save(
 		@Parameter(description = "요약지 ID (UUID)", example = "8b1d2e3f-4a5b-4c6d-9e7f-0a1b2c3d4e5f")
 		@PathVariable @Pattern(regexp = IntakeController.UUID_PATTERN, message = INVALID_SUMMARY_ID_MESSAGE)
-		String summaryId) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		String summaryId,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		@Parameter(hidden = true) @LoginMember Long memberId) {
+		return ApiResponse.success(SuccessStatus.SUMMARY_SAVE_SUCCESS, recordService.save(memberId, summaryId, guestKey));
 	}
 
 	@Operation(summary = "응급 카드 조회 (E02)", description = """
