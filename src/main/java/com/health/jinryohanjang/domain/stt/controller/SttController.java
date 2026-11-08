@@ -1,22 +1,30 @@
 package com.health.jinryohanjang.domain.stt.controller;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.health.jinryohanjang.common.config.SwaggerConfig;
-import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.response.ApiResponse;
-import com.health.jinryohanjang.common.status.ErrorStatus;
+import com.health.jinryohanjang.common.status.SuccessStatus;
+import com.health.jinryohanjang.domain.auth.security.AuthCookies;
+import com.health.jinryohanjang.domain.intake.repository.IntakeStore;
 import com.health.jinryohanjang.domain.stt.dto.SttResponse;
+import com.health.jinryohanjang.domain.stt.service.SttService;
+import com.health.jinryohanjang.domain.stt.service.SttService.SttResult;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 음성 인식 API를 제공한다.
@@ -24,10 +32,16 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @Tag(name = "stt", description = "음성 인식")
 @SecurityRequirement(name = SwaggerConfig.GUEST_KEY)
 @RestController
+@RequiredArgsConstructor
 public class SttController {
 
+	private static final String CF_CONNECTING_IP = "CF-Connecting-IP";
+
+	private final SttService sttService;
+	private final AuthCookies authCookies;
+
 	@Operation(summary = "음성 인식 (S03)", description = """
-		녹음 파일을 글자로 바꾼다. 받은 글자를 문진 시작이나 답변에 inputMode = VOICE로 보낸다 (답변 API는 음성을 직접 받지 않는다). 음성 파일은 저장하지 않는다.
+		녹음 파일을 글자로 바꾼다. 서버가 ffmpeg로 PCM(16kHz)으로 바꿔 Amazon Transcribe 스트리밍(ko-KR)으로 보낸다. 받은 글자를 문진 시작이나 답변에 inputMode = VOICE로 보낸다 (답변 API는 음성을 직접 받지 않는다). 음성 파일은 저장하지 않는다.
 
 		guestKey가 없으면 이 응답에서 새로 발급한다 (말로 시작하면 문진 시작보다 STT가 먼저라서). accessToken은 보지 않아서 만료돼도 401이 나지 않는다.
 
@@ -44,7 +58,21 @@ public class SttController {
 	@PostMapping(value = "/api/stt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public ResponseEntity<ApiResponse<SttResponse>> recognize(
 		@Parameter(description = "녹음 파일. webm(크롬)·mp4/m4a(사파리). 최대 10MB · 60초")
-		@RequestPart MultipartFile audio) {
-		throw new GeneralException(ErrorStatus.NOT_IMPLEMENTED);
+		@RequestPart MultipartFile audio,
+		@Parameter(hidden = true) @CookieValue(name = AuthCookies.GUEST_KEY, required = false) String guestKey,
+		HttpServletRequest httpRequest) {
+		SttResult result = sttService.recognize(audio, guestKey, clientIp(httpRequest));
+		HttpHeaders headers = new HttpHeaders();
+		headers.add(HttpHeaders.SET_COOKIE,
+			authCookies.create(AuthCookies.GUEST_KEY, result.guestKey(), IntakeStore.TTL).toString());
+		return ApiResponse.success(SuccessStatus.STT_SUCCESS, result.response(), headers);
+	}
+
+	/**
+	 * 프론트(Cloudflare) 프록시를 거치므로 CF-Connecting-IP를 먼저 본다.
+	 */
+	private String clientIp(HttpServletRequest request) {
+		String ip = request.getHeader(CF_CONNECTING_IP);
+		return ip != null && !ip.isBlank() ? ip.trim() : request.getRemoteAddr();
 	}
 }
