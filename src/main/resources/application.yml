@@ -29,6 +29,11 @@ app:
     model-id: ${BEDROCK_MODEL_ID:global.anthropic.claude-haiku-5-5}
     # 로컬은 aws configure로 만든 프로필 이름(예: jinryo). 비우면 기본 인증(EC2 Role 등)
     profile: ${BEDROCK_PROFILE:}
+  stt:
+    # Transcribe 스트리밍 리전. 자격 증명은 app.bedrock.profile과 같은 것을 쓴다 (EC2는 IAM Role)
+    region: ${TRANSCRIBE_REGION:ap-northeast-2}
+    # 녹음(webm·mp4)을 PCM으로 바꾸는 ffmpeg 실행 파일. PATH에 있으면 기본값 그대로
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
   public-data:
     # 공공데이터포털 일반 인증키(Decoding). 없으면 병원 동기화를 건너뜀
     service-key: ${PUBLIC_DATA_API_KEY:}

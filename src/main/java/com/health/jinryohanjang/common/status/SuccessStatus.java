@@ -51,6 +51,9 @@ public enum SuccessStatus implements BaseStatus {
 	RECORD_GET_SUCCESS("SUMMARY_200", HttpStatus.OK, "기록 상세 조회 성공"),
 	RECORD_DELETE_SUCCESS("SUMMARY_200", HttpStatus.OK, "기록 삭제 성공"),
 
+	// stt
+	STT_SUCCESS("STT_200", HttpStatus.OK, "음성 인식 성공"),
+
 	// consent
 	CONSENT_ALREADY_AGREED("CONSENT_200", HttpStatus.OK, "이미 동의했어요."),
 	CONSENT_AGREED("CONSENT_201", HttpStatus.CREATED, "동의 성공"),
