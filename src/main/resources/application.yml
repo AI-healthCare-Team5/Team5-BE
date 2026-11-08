@@ -37,6 +37,11 @@ app:
   public-data:
     # 공공데이터포털 일반 인증키(Decoding). 없으면 병원 동기화를 건너뜀
     service-key: ${PUBLIC_DATA_API_KEY:}
+  purge:
+    # 지운 기록·탈퇴 회원을 완전히 지우는 시각 (매일 03:00, 병원 동기화 04:00과 겹치지 않게)
+    cron: ${PURGE_CRON:0 0 3 * * *}
+    # soft delete 후 보관 기간 (노션·동의 문구: 30일)
+    retention: 30d
   hospital-sync:
     cron: "0 0 4 * * *"
     # 병원 데이터가 비어 있으면 서버 시작 직후 한 번 동기화

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.health.jinryohanjang.domain.consent.entity.Consent;
 import com.health.jinryohanjang.domain.consent.enums.ConsentType;
+import com.health.jinryohanjang.domain.member.enums.MemberStatus;
 
 public interface ConsentRepository extends JpaRepository<Consent, Long> {
 
@@ -28,4 +29,12 @@ public interface ConsentRepository extends JpaRepository<Consent, Long> {
 	@Query("UPDATE Consent c SET c.withdrawnAt = :now, c.updatedAt = :now "
 		+ "WHERE c.member.id = :memberId AND c.withdrawnAt IS NULL")
 	int withdrawAllByMemberId(@Param("memberId") Long memberId, @Param("now") LocalDateTime now);
+
+	/**
+	 * 30일 삭제 배치: 탈퇴한 지 cutoff가 지난 회원의 동의를 지운다. 회원이 남아 있는 동안 철회한 동의 이력은 지우지 않는다.
+	 */
+	@Modifying
+	@Query("DELETE FROM Consent c "
+		+ "WHERE c.member.id IN (SELECT m.id FROM Member m WHERE m.status = :withdrawn AND m.deletedAt < :cutoff)")
+	int purgeOfWithdrawnMembers(@Param("cutoff") LocalDateTime cutoff, @Param("withdrawn") MemberStatus withdrawn);
 }

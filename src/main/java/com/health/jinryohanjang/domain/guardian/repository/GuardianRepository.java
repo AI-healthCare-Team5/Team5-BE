@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.health.jinryohanjang.domain.guardian.entity.Guardian;
+import com.health.jinryohanjang.domain.member.enums.MemberStatus;
 
 public interface GuardianRepository extends JpaRepository<Guardian, Long> {
 
@@ -26,4 +27,12 @@ public interface GuardianRepository extends JpaRepository<Guardian, Long> {
 	@Query("UPDATE Guardian g SET g.deletedAt = :now, g.updatedAt = :now "
 		+ "WHERE g.member.id = :memberId AND g.deletedAt IS NULL")
 	int deleteByMemberId(@Param("memberId") Long memberId, @Param("now") LocalDateTime now);
+
+	/**
+	 * 30일 삭제 배치: 지운 지 cutoff가 지난 보호자와, 탈퇴한 지 cutoff가 지난 회원의 보호자를 완전히 지운다.
+	 */
+	@Modifying
+	@Query("DELETE FROM Guardian g WHERE g.deletedAt < :cutoff "
+		+ "OR g.member.id IN (SELECT m.id FROM Member m WHERE m.status = :withdrawn AND m.deletedAt < :cutoff)")
+	int purge(@Param("cutoff") LocalDateTime cutoff, @Param("withdrawn") MemberStatus withdrawn);
 }
