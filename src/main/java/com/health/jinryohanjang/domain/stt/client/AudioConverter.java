@@ -2,19 +2,26 @@ package com.health.jinryohanjang.domain.stt.client;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 녹음 파일(webm·mp4)을 ffmpeg로 Transcribe 스트리밍이 받는 PCM(16kHz, mono, 16bit)으로 바꾼다.
  * mp4는 파일 끝에 정보가 있어 파이프로 읽을 수 없으므로 임시 파일에 쓰고, 변환이 끝나면 바로 지운다.
+ * 출력은 다른 스레드에서 읽고 프로세스 종료를 시간 제한으로 기다려서, ffmpeg가 멈춰도 요청 스레드가 묶이지 않는다.
  */
 @Slf4j
 @Component
@@ -25,6 +32,7 @@ public class AudioConverter {
 	private static final long TIMEOUT_SECONDS = 20;
 
 	private final String ffmpegPath;
+	private final ExecutorService outputReader = Executors.newVirtualThreadPerTaskExecutor();
 
 	public AudioConverter(@Value("${app.stt.ffmpeg-path:ffmpeg}") String ffmpegPath) {
 		this.ffmpegPath = ffmpegPath;
@@ -44,18 +52,20 @@ public class AudioConverter {
 				"-ac", "1", "-ar", String.valueOf(SAMPLE_RATE), "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"))
 				.redirectError(ProcessBuilder.Redirect.DISCARD)
 				.start();
-			byte[] pcm;
-			try (InputStream output = process.getInputStream()) {
-				pcm = output.readAllBytes();
-			}
+			Process started = process;
+			CompletableFuture<byte[]> output = CompletableFuture.supplyAsync(() -> readAll(started), outputReader);
 			if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+				process.destroyForcibly();
+				log.warn("ffmpeg 변환이 {}초 안에 끝나지 않아 중단했습니다.", TIMEOUT_SECONDS);
 				throw new ConversionException("ffmpeg 변환 시간이 초과됐습니다.");
 			}
+			// 프로세스가 끝나면 출력이 닫히므로 바로 끝난다.
+			byte[] pcm = output.join();
 			if (process.exitValue() != 0 || pcm.length == 0) {
 				throw new UnsupportedAudioException();
 			}
 			return new Pcm(pcm, (double)pcm.length / BYTES_PER_SECOND);
-		} catch (IOException e) {
+		} catch (IOException | CompletionException e) {
 			log.error("ffmpeg를 실행하지 못했습니다. FFMPEG_PATH를 확인해 주세요.", e);
 			throw new ConversionException("ffmpeg를 실행하지 못했습니다.");
 		} catch (InterruptedException e) {
@@ -66,6 +76,19 @@ public class AudioConverter {
 				process.destroyForcibly();
 			}
 			deleteQuietly(input);
+		}
+	}
+
+	@PreDestroy
+	public void shutdown() {
+		outputReader.shutdownNow();
+	}
+
+	private static byte[] readAll(Process process) {
+		try (InputStream output = process.getInputStream()) {
+			return output.readAllBytes();
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 
