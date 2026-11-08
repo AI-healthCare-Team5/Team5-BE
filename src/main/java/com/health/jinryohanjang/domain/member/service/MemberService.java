@@ -5,6 +5,8 @@ import java.time.ZoneId;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import com.health.jinryohanjang.common.exception.GeneralException;
@@ -21,11 +23,13 @@ import com.health.jinryohanjang.domain.summary.repository.MedicalRecordRepositor
 import com.health.jinryohanjang.domain.summary.repository.SummaryStore;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 로그인한 회원을 찾고, 내 정보 조회와 탈퇴를 처리한다.
  * 보호자·동의·기록 서비스가 이 서비스를 쓰므로, 순환 의존이 생기지 않게 다른 도메인은 리포지토리로 다룬다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MemberService {
@@ -69,6 +73,7 @@ public class MemberService {
 	/**
 	 * 회원은 WITHDRAWN + deleted_at, 기록·보호자는 deleted_at, 동의는 withdrawn_at을 기록한다.
 	 * refreshToken을 지우고, 이미 발급한 accessToken은 만료될 때까지 막는다. 이 기기의 문진·요약지도 지운다.
+	 * Redis 작업은 DB 커밋이 끝난 뒤에 해서, 커밋이 실패했는데 토큰만 막히는 상태가 생기지 않게 한다.
 	 */
 	@Transactional
 	public void withdraw(Long memberId, String guestKey) {
@@ -78,12 +83,27 @@ public class MemberService {
 		guardianRepository.deleteByMemberId(memberId, now);
 		consentRepository.withdrawAllByMemberId(memberId, now);
 		member.withdraw(now);
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				clearSessions(memberId, guestKey);
+			}
+		});
+	}
 
-		authTokenStore.deleteRefreshToken(memberId);
-		authTokenStore.markWithdrawn(memberId);
-		if (StringUtils.hasText(guestKey)) {
-			intakeStore.deleteAllByGuestKey(guestKey);
-			summaryStore.deleteAllByGuestKey(guestKey);
+	/**
+	 * 탈퇴는 이미 커밋됐으므로 실패해도 응답은 성공으로 둔다. 남은 accessToken은 서비스의 회원 확인(DB 상태)에서도 막힌다.
+	 */
+	private void clearSessions(Long memberId, String guestKey) {
+		try {
+			authTokenStore.deleteRefreshToken(memberId);
+			authTokenStore.markWithdrawn(memberId);
+			if (StringUtils.hasText(guestKey)) {
+				intakeStore.deleteAllByGuestKey(guestKey);
+				summaryStore.deleteAllByGuestKey(guestKey);
+			}
+		} catch (RuntimeException e) {
+			log.error("탈퇴는 끝났지만 Redis의 토큰·문진을 정리하지 못했습니다.", e);
 		}
 	}
 
