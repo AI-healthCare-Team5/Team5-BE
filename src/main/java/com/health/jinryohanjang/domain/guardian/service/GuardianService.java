@@ -20,7 +20,7 @@ import com.health.jinryohanjang.domain.guardian.dto.GuardianResponse;
 import com.health.jinryohanjang.domain.guardian.entity.Guardian;
 import com.health.jinryohanjang.domain.guardian.repository.GuardianRepository;
 import com.health.jinryohanjang.domain.member.entity.Member;
-import com.health.jinryohanjang.domain.member.repository.MemberRepository;
+import com.health.jinryohanjang.domain.member.service.MemberService;
 
 /**
  * 보호자 등록·변경·삭제를 처리한다. 보호자와 보호자 연락처 저장 동의(GUARDIAN)는 함께 저장하고 함께 철회한다.
@@ -31,17 +31,17 @@ public class GuardianService {
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
 	private final GuardianRepository guardianRepository;
-	private final MemberRepository memberRepository;
+	private final MemberService memberService;
 	private final ConsentService consentService;
 	private final String guardianConsentVersion;
 
 	public GuardianService(
 		GuardianRepository guardianRepository,
-		MemberRepository memberRepository,
+		MemberService memberService,
 		ConsentService consentService,
 		@Value("${app.consent.version.guardian}") String guardianConsentVersion) {
 		this.guardianRepository = guardianRepository;
-		this.memberRepository = memberRepository;
+		this.memberService = memberService;
 		this.consentService = consentService;
 		this.guardianConsentVersion = guardianConsentVersion;
 	}
@@ -55,7 +55,7 @@ public class GuardianService {
 			throw new GeneralException(ErrorStatus.GUARDIAN_INVALID_INPUT,
 				Map.of("errors", List.of(new FieldErrorDetail("policyVersion", "현재 동의 문구 버전이 아니에요"))));
 		}
-		Member member = activeMember(memberId);
+		Member member = memberService.getActiveMember(memberId);
 		Guardian guardian = guardianRepository.findByMemberId(memberId)
 			.map(found -> {
 				found.change(request.relation(), request.phoneNumber());
@@ -69,7 +69,7 @@ public class GuardianService {
 
 	@Transactional
 	public void delete(Long memberId) {
-		activeMember(memberId);
+		memberService.getActiveMember(memberId);
 		Guardian guardian = guardianRepository.findByMemberIdAndDeletedAtIsNull(memberId)
 			.orElseThrow(() -> new GeneralException(ErrorStatus.GUARDIAN_NOT_FOUND));
 		guardian.delete(LocalDateTime.now(SEOUL).withNano(0));
@@ -85,14 +85,5 @@ public class GuardianService {
 			return Optional.empty();
 		}
 		return guardianRepository.findByMemberIdAndDeletedAtIsNull(memberId);
-	}
-
-	/**
-	 * accessToken이 유효해도 회원 행이 없거나 탈퇴했으면 AUTH_401이다.
-	 */
-	private Member activeMember(Long memberId) {
-		return memberRepository.findById(memberId)
-			.filter(member -> !member.isWithdrawn())
-			.orElseThrow(() -> new GeneralException(ErrorStatus.TOKEN_INVALID));
 	}
 }

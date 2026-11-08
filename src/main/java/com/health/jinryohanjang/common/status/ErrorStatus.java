@@ -63,6 +63,7 @@ public enum ErrorStatus implements BaseStatus {
 	SUMMARY_AI_UNAVAILABLE("SUMMARY_503", HttpStatus.SERVICE_UNAVAILABLE, "지금은 요약지를 만들 수 없어요. 잠시 후 다시 시도해 주세요."),
 
 	// consent
+	CONSENT_INVALID_INPUT("CONSENT_400", HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
 	CONSENT_RECORD_REQUIRED("CONSENT_403", HttpStatus.FORBIDDEN, "기록 저장에 동의해야 보관할 수 있어요."),
 
 	// guardian
