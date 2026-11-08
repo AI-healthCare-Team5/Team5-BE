@@ -37,10 +37,13 @@ import com.health.jinryohanjang.domain.summary.model.Summary;
 import com.health.jinryohanjang.domain.summary.repository.MedicalRecordRepository;
 import com.health.jinryohanjang.domain.summary.repository.SummaryStore;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * 내 기록(보관한 요약지)의 보관·목록·상세·삭제를 처리한다.
  * 보관은 Redis의 요약지를 DB로 복사하고, 복사가 끝나면 Redis의 문진·요약지를 바로 지운다.
  */
+@Slf4j
 @Service
 public class RecordService {
 
@@ -99,8 +102,7 @@ public class RecordService {
 			throwIfAlreadySaved(summaryId, memberId);
 			throw e;
 		}
-		summaryStore.delete(summaryId, summary.getGuestKey());
-		intakeStore.find(summary.getIntakeId()).ifPresent(intakeStore::delete);
+		deleteFromRedis(summary);
 		return new SummarySaveResponse(record.getId(), toOffset(record.getCreatedAt()));
 	}
 
@@ -132,6 +134,18 @@ public class RecordService {
 	@Transactional(readOnly = true)
 	public long countRecords(Long memberId) {
 		return medicalRecordRepository.countByMemberIdAndDeletedAtIsNull(memberId);
+	}
+
+	/**
+	 * 보관은 이미 DB에 끝났으므로 Redis 삭제가 실패해도 성공으로 응답한다. 남은 문진·요약지는 1시간 TTL로 사라진다.
+	 */
+	private void deleteFromRedis(Summary summary) {
+		try {
+			summaryStore.delete(summary.getSummaryId(), summary.getGuestKey());
+			intakeStore.find(summary.getIntakeId()).ifPresent(intakeStore::delete);
+		} catch (RuntimeException e) {
+			log.warn("보관은 끝났지만 Redis의 문진·요약지를 지우지 못했습니다. 1시간 뒤 자동으로 사라집니다.", e);
+		}
 	}
 
 	/**

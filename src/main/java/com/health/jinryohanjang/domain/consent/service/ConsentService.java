@@ -8,8 +8,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.health.jinryohanjang.common.exception.GeneralException;
 import com.health.jinryohanjang.common.exception.GeneralExceptionAdvice.FieldErrorDetail;
@@ -33,21 +35,24 @@ public class ConsentService {
 
 	private final ConsentRepository consentRepository;
 	private final MemberService memberService;
+	private final TransactionTemplate transactionTemplate;
 	private final String recordConsentVersion;
 
 	public ConsentService(
 		ConsentRepository consentRepository,
 		MemberService memberService,
+		TransactionTemplate transactionTemplate,
 		@Value("${app.consent.version.record}") String recordConsentVersion) {
 		this.consentRepository = consentRepository;
 		this.memberService = memberService;
+		this.transactionTemplate = transactionTemplate;
 		this.recordConsentVersion = recordConsentVersion;
 	}
 
 	/**
 	 * 기록 저장 동의(C02). consentType은 RECORD만, policyVersion은 서버 설정의 현재 버전만 받는다.
+	 * 같은 회원이 동시에 두 번 보내면 늦은 쪽이 부분 UNIQUE에 걸리므로, 한 번 더 시도해 먼저 저장된 동의를 돌려준다(CONSENT_200).
 	 */
-	@Transactional
 	public AgreeResult agreeRecord(Long memberId, ConsentRequest request) {
 		List<FieldErrorDetail> errors = new ArrayList<>();
 		if (request.consentType() != ConsentType.RECORD) {
@@ -59,7 +64,12 @@ public class ConsentService {
 		if (!errors.isEmpty()) {
 			throw new GeneralException(ErrorStatus.CONSENT_INVALID_INPUT, Map.of("errors", errors));
 		}
-		return agree(memberService.getActiveMember(memberId), ConsentType.RECORD, request.policyVersion());
+		Member member = memberService.getActiveMember(memberId);
+		try {
+			return transactionTemplate.execute(status -> agree(member, ConsentType.RECORD, request.policyVersion()));
+		} catch (DataIntegrityViolationException e) {
+			return transactionTemplate.execute(status -> agree(member, ConsentType.RECORD, request.policyVersion()));
+		}
 	}
 
 	/**
