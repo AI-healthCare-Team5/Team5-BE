@@ -59,6 +59,14 @@ public class Member extends BaseEntity {
 		return status == MemberStatus.WITHDRAWN;
 	}
 
+	/**
+	 * 탈퇴한다. 30일 안에 같은 카카오 계정으로 다시 로그인하면 restore로 이 행만 되살린다.
+	 */
+	public void withdraw(LocalDateTime deletedAt) {
+		this.status = MemberStatus.WITHDRAWN;
+		this.deletedAt = deletedAt;
+	}
+
 	public void restore(String nickname) {
 		this.status = MemberStatus.ACTIVE;
 		this.deletedAt = null;

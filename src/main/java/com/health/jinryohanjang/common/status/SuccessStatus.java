@@ -20,6 +20,10 @@ public enum SuccessStatus implements BaseStatus {
 	REFRESH_SUCCESS("AUTH_200", HttpStatus.OK, "토큰 재발급 성공"),
 	LOGOUT_SUCCESS("AUTH_200", HttpStatus.OK, "로그아웃 성공"),
 
+	// member
+	MEMBER_GET_SUCCESS("MEMBER_200", HttpStatus.OK, "내 정보 조회 성공"),
+	MEMBER_WITHDRAW_SUCCESS("MEMBER_200", HttpStatus.OK, "회원 탈퇴 성공"),
+
 	// hospital
 	HOSPITAL_SEARCH_SUCCESS("HOSPITAL_200", HttpStatus.OK, "병원 검색 성공"),
 	EMERGENCY_ROOM_SUCCESS("HOSPITAL_200", HttpStatus.OK, "응급실 조회 성공"),

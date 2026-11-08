@@ -24,13 +24,16 @@ public class AuthTokenStore {
 
 	private final StringRedisTemplate redisTemplate;
 	private final Duration refreshTokenTtl;
+	private final Duration accessTokenTtl;
 	private final SecureRandom secureRandom = new SecureRandom();
 
 	public AuthTokenStore(
 		StringRedisTemplate redisTemplate,
-		@Value("${app.jwt.refresh-token-ttl}") Duration refreshTokenTtl) {
+		@Value("${app.jwt.refresh-token-ttl}") Duration refreshTokenTtl,
+		@Value("${app.jwt.access-token-ttl}") Duration accessTokenTtl) {
 		this.redisTemplate = redisTemplate;
 		this.refreshTokenTtl = refreshTokenTtl;
+		this.accessTokenTtl = accessTokenTtl;
 	}
 
 	public String issueRefreshToken(Long memberId) {
@@ -67,6 +70,20 @@ public class AuthTokenStore {
 
 	public void deleteRefreshToken(Long memberId) {
 		redisTemplate.delete(REFRESH_KEY_PREFIX + memberId);
+	}
+
+	/**
+	 * 탈퇴 전에 발급한 accessToken이 만료될 때까지 막는다.
+	 */
+	public void markWithdrawn(Long memberId) {
+		redisTemplate.opsForValue().set(WITHDRAWN_KEY_PREFIX + memberId, "1", accessTokenTtl);
+	}
+
+	/**
+	 * 탈퇴 후 다시 로그인해 회원을 되살리면 새로 발급한 accessToken이 막히지 않게 지운다.
+	 */
+	public void clearWithdrawn(Long memberId) {
+		redisTemplate.delete(WITHDRAWN_KEY_PREFIX + memberId);
 	}
 
 	public boolean isWithdrawn(Long memberId) {
