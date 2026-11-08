@@ -89,6 +89,13 @@ public class SummaryService {
 		return toResponse(summary);
 	}
 
+	/**
+	 * 보관할 요약지를 찾는다. guestKey가 없거나 다르면 403, 없으면 404, 생성 중·실패면 409(result null)다.
+	 */
+	public Summary getDone(String summaryId, String guestKey) {
+		return loadDone(summaryId, guestKey);
+	}
+
 	public SummaryConfirmResponse confirm(String summaryId, String guestKey) {
 		Summary summary = loadDone(summaryId, guestKey);
 		summary.confirm();
