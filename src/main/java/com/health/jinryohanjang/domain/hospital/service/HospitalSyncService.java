@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
@@ -34,8 +35,9 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * 공공데이터로 강원 병원·진료과·진료 시간·응급실 여부를 동기화한다.
+ * app.hospital-sync.regions에 적은 시군 병원만 저장하고, 비어 있으면 강원 전체를 저장한다.
  * 병원 목록을 끝까지 받지 못하면 중단하고 이전 데이터를 그대로 둔다.
- * 끝까지 성공했을 때만 목록에서 사라진 병원을 지운다.
+ * 끝까지 성공했을 때만 목록에서 사라진 병원(대상에서 빠진 시군 포함)을 지운다.
  */
 @Slf4j
 @Service
@@ -55,6 +57,9 @@ public class HospitalSyncService {
 	private final DepartmentRepository departmentRepository;
 	private final TransactionTemplate transactionTemplate;
 	private final AtomicBoolean running = new AtomicBoolean(false);
+
+	@Value("${app.hospital-sync.regions:}")
+	private List<String> targetRegionNames;
 
 	public boolean hasNoHospitals() {
 		return hospitalRepository.count() == 0;
@@ -84,7 +89,7 @@ public class HospitalSyncService {
 			.collect(Collectors.toMap(Region::getName, Function.identity()));
 		Map<String, Department> departments = departmentRepository.findAll().stream()
 			.collect(Collectors.toMap(Department::getCode, Function.identity()));
-		log.info("병원 동기화 시작");
+		log.info("병원 동기화 시작, 대상 시군: {}", isAllRegions() ? "강원 전체" : targetRegionNames);
 
 		SyncCount count = new SyncCount();
 		int pageNo = 1;
@@ -106,8 +111,12 @@ public class HospitalSyncService {
 
 	private void syncHospital(JsonNode item, Map<String, Region> regions, Map<String, Department> departments,
 		LocalDateTime syncedAt, SyncCount count) {
+		String regionName = text(item, "sgguCdNm");
+		if (!isTargetRegion(regionName)) {
+			return;
+		}
 		String ykiho = text(item, "ykiho");
-		Region region = regions.get(text(item, "sgguCdNm"));
+		Region region = regions.get(regionName);
 		BigDecimal longitude = decimal(item, "XPos");
 		BigDecimal latitude = decimal(item, "YPos");
 		String name = text(item, "yadmNm");
@@ -187,7 +196,9 @@ public class HospitalSyncService {
 	private void syncEmergencyRooms() {
 		List<JsonNode> emergencyRooms;
 		try {
-			emergencyRooms = publicDataClient.getEmergencyRooms();
+			emergencyRooms = publicDataClient.getEmergencyRooms().stream()
+				.filter(this::isTargetEmergencyRoom)
+				.toList();
 		} catch (RuntimeException e) {
 			log.warn("응급의료기관 조회 실패, 응급실 표시는 이전 값을 씁니다.", e);
 			return;
@@ -238,6 +249,30 @@ public class HospitalSyncService {
 			return stale.size();
 		});
 		return deleted == null ? 0 : deleted;
+	}
+
+	private boolean isAllRegions() {
+		return targetRegionNames == null || targetRegionNames.stream().noneMatch(StringUtils::hasText);
+	}
+
+	private boolean isTargetRegion(String regionName) {
+		return isAllRegions() || (regionName != null && targetRegionNames.stream()
+			.map(String::trim)
+			.anyMatch(regionName::equals));
+	}
+
+	/**
+	 * 응급의료기관은 시군 필드가 없어서 주소(예: "강원특별자치도 원주시 ...")의 시군 이름으로 고른다.
+	 */
+	private boolean isTargetEmergencyRoom(JsonNode emergencyRoom) {
+		if (isAllRegions()) {
+			return true;
+		}
+		String address = text(emergencyRoom, "dutyAddr");
+		return address != null && targetRegionNames.stream()
+			.map(String::trim)
+			.filter(StringUtils::hasText)
+			.anyMatch(address::contains);
 	}
 
 	private String hospitalType(JsonNode item) {
