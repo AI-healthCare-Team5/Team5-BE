@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClientException;
 
 import com.health.jinryohanjang.domain.department.entity.Department;
 import com.health.jinryohanjang.domain.department.repository.DepartmentRepository;
@@ -45,7 +46,9 @@ import tools.jackson.databind.JsonNode;
 public class HospitalSyncService {
 
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-	private static final int PAGE_SIZE = 500;
+	private static final int PAGE_SIZE = 100;
+	private static final int PAGE_MAX_ATTEMPTS = 3;
+	private static final int DETAIL_MAX_CONSECUTIVE_FAILURES = 10;
 	private static final double EMERGENCY_MATCH_KM = 0.5;
 	private static final LocalTime END_OF_DAY = LocalTime.of(23, 59);
 	private static final String[] DAY_FIELDS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
@@ -89,13 +92,18 @@ public class HospitalSyncService {
 			.collect(Collectors.toMap(Region::getName, Function.identity()));
 		Map<String, Department> departments = departmentRepository.findAll().stream()
 			.collect(Collectors.toMap(Department::getCode, Function.identity()));
+		List<String> unknownRegions = unknownTargetRegions(regions);
+		if (!unknownRegions.isEmpty()) {
+			// 그대로 진행하면 저장 0건으로 끝나고 기존 병원이 모두 지워진다.
+			throw new IllegalStateException("app.hospital-sync.regions에 없는 시군 이름: " + unknownRegions);
+		}
 		log.info("병원 동기화 시작, 대상 시군: {}", isAllRegions() ? "강원 전체" : targetRegionNames);
 
 		SyncCount count = new SyncCount();
 		int pageNo = 1;
 		int totalCount;
 		do {
-			PublicDataClient.Page page = publicDataClient.getHospitals(pageNo, PAGE_SIZE);
+			PublicDataClient.Page page = fetchHospitalPage(pageNo);
 			totalCount = page.totalCount();
 			for (JsonNode item : page.items()) {
 				syncHospital(item, regions, departments, startedAt, count);
@@ -104,9 +112,30 @@ public class HospitalSyncService {
 		} while ((long)(pageNo - 1) * PAGE_SIZE < totalCount);
 
 		syncEmergencyRooms();
+		if (count.saved == 0) {
+			log.warn("저장한 병원이 없어서 기존 병원을 지우지 않습니다. 대상 시군 설정과 공공 API 응답을 확인하세요.");
+			return;
+		}
 		int deleted = deleteStaleHospitals(startedAt);
 		log.info("병원 동기화 완료: 저장 {}, 건너뜀 {}, 상세정보 실패 {}, 삭제 {}",
 			count.saved, count.skipped, count.detailFailed, deleted);
+	}
+
+	/**
+	 * 목록 한 페이지가 실패하면 동기화 전체가 멈추므로, 그 페이지만 몇 번 다시 받는다.
+	 */
+	private PublicDataClient.Page fetchHospitalPage(int pageNo) {
+		for (int attempt = 1; ; attempt++) {
+			try {
+				return publicDataClient.getHospitals(pageNo, PAGE_SIZE);
+			} catch (RestClientException e) {
+				if (attempt >= PAGE_MAX_ATTEMPTS) {
+					throw e;
+				}
+				log.warn("병원 목록 {}페이지 받기 실패({}/{}), 다시 시도합니다: {}",
+					pageNo, attempt, PAGE_MAX_ATTEMPTS, e.getMessage());
+			}
+		}
 	}
 
 	private void syncHospital(JsonNode item, Map<String, Region> regions, Map<String, Department> departments,
@@ -157,9 +186,10 @@ public class HospitalSyncService {
 					result.add(department);
 				}
 			}
+			count.detailSucceeded();
 			return result;
 		} catch (RuntimeException e) {
-			count.detailFailed++;
+			count.detailFailed(e);
 			return null;
 		}
 	}
@@ -171,8 +201,9 @@ public class HospitalSyncService {
 		JsonNode detail;
 		try {
 			detail = publicDataClient.getDetail(ykiho);
+			count.detailSucceeded();
 		} catch (RuntimeException e) {
-			count.detailFailed++;
+			count.detailFailed(e);
 			return null;
 		}
 		List<DaySchedule> schedules = new ArrayList<>();
@@ -194,15 +225,21 @@ public class HospitalSyncService {
 	 * 두 기관의 좌표가 다른 경우가 있어서, 좌표로 못 찾으면 이름이 같은 병원을 쓴다.
 	 */
 	private void syncEmergencyRooms() {
-		List<JsonNode> emergencyRooms;
+		List<JsonNode> gangwonEmergencyRooms;
 		try {
-			emergencyRooms = publicDataClient.getEmergencyRooms().stream()
-				.filter(this::isTargetEmergencyRoom)
-				.toList();
+			gangwonEmergencyRooms = publicDataClient.getEmergencyRooms();
 		} catch (RuntimeException e) {
 			log.warn("응급의료기관 조회 실패, 응급실 표시는 이전 값을 씁니다.", e);
 			return;
 		}
+		if (gangwonEmergencyRooms.isEmpty()) {
+			// 강원에 응급의료기관이 0곳일 리 없으니 포털 이상으로 보고 기존 표시를 지우지 않는다.
+			log.warn("응급의료기관이 0건으로 와서 응급실 표시는 이전 값을 씁니다.");
+			return;
+		}
+		List<JsonNode> emergencyRooms = gangwonEmergencyRooms.stream()
+			.filter(this::isTargetEmergencyRoom)
+			.toList();
 		transactionTemplate.executeWithoutResult(status -> {
 			List<Hospital> hospitals = hospitalRepository.findAll();
 			hospitals.stream().filter(Hospital::isHasEmergencyRoom).forEach(Hospital::clearEmergencyRoom);
@@ -249,6 +286,17 @@ public class HospitalSyncService {
 			return stale.size();
 		});
 		return deleted == null ? 0 : deleted;
+	}
+
+	private List<String> unknownTargetRegions(Map<String, Region> regions) {
+		if (isAllRegions()) {
+			return List.of();
+		}
+		return targetRegionNames.stream()
+			.map(String::trim)
+			.filter(StringUtils::hasText)
+			.filter(name -> !regions.containsKey(name))
+			.toList();
 	}
 
 	private boolean isAllRegions() {
@@ -342,5 +390,21 @@ public class HospitalSyncService {
 		private int saved;
 		private int skipped;
 		private int detailFailed;
+		private int consecutiveDetailFailures;
+
+		private void detailSucceeded() {
+			consecutiveDetailFailures = 0;
+		}
+
+		/**
+		 * 상세 호출이 연달아 실패하면 포털 장애로 보고 동기화를 멈춘다. 멈추면 기존 병원은 지우지 않는다.
+		 */
+		private void detailFailed(RuntimeException e) {
+			detailFailed++;
+			consecutiveDetailFailures++;
+			if (consecutiveDetailFailures >= DETAIL_MAX_CONSECUTIVE_FAILURES) {
+				throw new IllegalStateException("상세 API가 " + consecutiveDetailFailures + "번 연속 실패", e);
+			}
+		}
 	}
 }
