@@ -33,17 +33,27 @@ public class PublicDataClient {
 	private static final String GANGWON_SIDO_CODE = "320000";
 	private static final String GANGWON_SIDO_NAME = "강원특별자치도";
 	private static final String SUCCESS_CODE = "00";
-	private static final Duration TIMEOUT = Duration.ofSeconds(10);
+	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+	// 목록은 100건에 약 12초, 많게는 20초 넘게 걸려서 응답 대기를 넉넉히 둔다.
+	private static final Duration LIST_READ_TIMEOUT = Duration.ofSeconds(60);
+	// 상세는 병원마다 2번씩 불러서, 길게 두면 포털 장애 때 동기화가 수십 시간으로 늘어난다.
+	private static final Duration DETAIL_READ_TIMEOUT = Duration.ofSeconds(15);
 
-	private final RestClient restClient;
+	private final RestClient listClient;
+	private final RestClient detailClient;
 	private final String serviceKey;
 
 	public PublicDataClient(@Value("${app.public-data.service-key:}") String serviceKey) {
-		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setConnectTimeout(TIMEOUT);
-		requestFactory.setReadTimeout(TIMEOUT);
-		this.restClient = RestClient.builder().requestFactory(requestFactory).build();
+		this.listClient = restClient(LIST_READ_TIMEOUT);
+		this.detailClient = restClient(DETAIL_READ_TIMEOUT);
 		this.serviceKey = serviceKey;
+	}
+
+	private static RestClient restClient(Duration readTimeout) {
+		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
+		requestFactory.setReadTimeout(readTimeout);
+		return RestClient.builder().requestFactory(requestFactory).build();
 	}
 
 	public boolean isConfigured() {
@@ -51,25 +61,25 @@ public class PublicDataClient {
 	}
 
 	public Page getHospitals(int pageNo, int numOfRows) {
-		JsonNode body = call(HOSPITAL_LIST_PATH, Map.of(
+		JsonNode body = call(listClient, HOSPITAL_LIST_PATH, Map.of(
 			"sidoCd", GANGWON_SIDO_CODE, "pageNo", String.valueOf(pageNo), "numOfRows", String.valueOf(numOfRows)));
 		return new Page(body.path("totalCount").asInt(), items(body));
 	}
 
 	public List<JsonNode> getDepartments(String ykiho) {
-		return items(call(DEPARTMENT_PATH, Map.of("ykiho", ykiho, "numOfRows", "100")));
+		return items(call(detailClient, DEPARTMENT_PATH, Map.of("ykiho", ykiho, "numOfRows", "100")));
 	}
 
 	public JsonNode getDetail(String ykiho) {
-		List<JsonNode> items = items(call(DETAIL_PATH, Map.of("ykiho", ykiho)));
+		List<JsonNode> items = items(call(detailClient, DETAIL_PATH, Map.of("ykiho", ykiho)));
 		return items.isEmpty() ? null : items.get(0);
 	}
 
 	public List<JsonNode> getEmergencyRooms() {
-		return items(call(EMERGENCY_ROOM_PATH, Map.of("Q0", GANGWON_SIDO_NAME, "numOfRows", "500")));
+		return items(call(listClient, EMERGENCY_ROOM_PATH, Map.of("Q0", GANGWON_SIDO_NAME, "numOfRows", "500")));
 	}
 
-	private JsonNode call(String path, Map<String, String> params) {
+	private JsonNode call(RestClient restClient, String path, Map<String, String> params) {
 		Map<String, String> query = new LinkedHashMap<>();
 		query.put("serviceKey", serviceKey);
 		query.put("_type", "json");

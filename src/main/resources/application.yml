@@ -46,6 +46,8 @@ app:
     cron: "0 0 4 * * *"
     # 병원 데이터가 비어 있으면 서버 시작 직후 한 번 동기화
     run-on-startup: ${HOSPITAL_SYNC_ON_STARTUP:true}
+    # 동기화할 강원 시군 이름(region_name). 쉼표로 여러 개, 빈 값이면 강원 전체. 목록에 없는 시군 병원은 동기화 때 지워짐
+    regions: ${HOSPITAL_SYNC_REGIONS:춘천시,원주시}
 
 spring:
   application:
