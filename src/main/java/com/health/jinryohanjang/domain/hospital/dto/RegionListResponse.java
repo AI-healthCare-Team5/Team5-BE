@@ -5,7 +5,7 @@ import java.util.List;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 public record RegionListResponse(
-	@Schema(description = "강원 18개 시·군. 이름순(가나다) 정렬")
+	@Schema(description = "서비스 지역 시·군(기본 춘천시·원주시). 이름순(가나다) 정렬")
 	List<Region> regions
 ) {
 

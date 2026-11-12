@@ -25,7 +25,7 @@ public class RegionController {
 	private final HospitalService hospitalService;
 
 	@Operation(summary = "시·군 목록 (S05b)", description = """
-		강원 18개 시·군을 이름순으로 돌려준다. regionCode가 병원 검색 기준이라 서버에서 내려주고, 프론트는 처음 한 번 받아서 캐시하면 된다.
+		서비스 지역(병원 동기화 대상 시·군, 기본 춘천시·원주시)을 이름순으로 돌려준다. regionCode가 병원 검색 기준이라 서버에서 내려주고, 프론트는 처음 한 번 받아서 캐시하면 된다.
 
 		| code | 설명 |
 		| --- | --- |
