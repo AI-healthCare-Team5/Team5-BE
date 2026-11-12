@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -35,13 +36,11 @@ import com.health.jinryohanjang.domain.hospital.repository.HospitalRepository.Ho
 import com.health.jinryohanjang.domain.hospital.repository.HospitalScheduleRepository;
 import com.health.jinryohanjang.domain.hospital.repository.RegionRepository;
 
-import lombok.RequiredArgsConstructor;
 
 /**
  * 동기화해 둔 병원 데이터에서 병원·응급실·보건소를 찾는다. 요청 중에 공공 API를 부르지 않는다.
  */
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class HospitalService {
 
@@ -53,6 +52,26 @@ public class HospitalService {
 	private final HospitalScheduleRepository hospitalScheduleRepository;
 	private final RegionRepository regionRepository;
 	private final DepartmentRepository departmentRepository;
+	private final List<String> serviceRegionNames;
+
+	/**
+	 * 서비스 지역은 병원 동기화 대상(app.hospital-sync.regions)과 같다. 비어 있으면 강원 전체다.
+	 */
+	public HospitalService(
+		HospitalRepository hospitalRepository,
+		HospitalScheduleRepository hospitalScheduleRepository,
+		RegionRepository regionRepository,
+		DepartmentRepository departmentRepository,
+		@Value("${app.hospital-sync.regions:}") List<String> serviceRegionNames) {
+		this.hospitalRepository = hospitalRepository;
+		this.hospitalScheduleRepository = hospitalScheduleRepository;
+		this.regionRepository = regionRepository;
+		this.departmentRepository = departmentRepository;
+		this.serviceRegionNames = serviceRegionNames == null ? List.of() : serviceRegionNames.stream()
+			.map(String::trim)
+			.filter(StringUtils::hasText)
+			.toList();
+	}
 
 	public HospitalSearchResponse search(String departmentCode, Double latitude, Double longitude, String regionCode,
 		int radius, int limit) {
@@ -78,6 +97,7 @@ public class HospitalService {
 
 	public RegionListResponse getRegions() {
 		List<RegionListResponse.Region> regions = regionRepository.findAllByOrderByNameAsc().stream()
+			.filter(region -> serviceRegionNames.isEmpty() || serviceRegionNames.contains(region.getName()))
 			.map(region -> new RegionListResponse.Region(region.getCode(), region.getName(),
 				region.getCenterLatitude().doubleValue(), region.getCenterLongitude().doubleValue()))
 			.toList();
